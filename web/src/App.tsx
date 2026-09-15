@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type CategoryNet, type DailySum, type Me, type Overview, type Receivable, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
+import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySum, type Me, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
 import { brand } from './brand'
 import { TxDetailView } from './detail'
 import { RulesPanel, TemplatesPanel } from './manage'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
+import { StatsView } from './stats'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
 
@@ -166,7 +167,7 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
           onSaved={(again) => { reload(); if (!again) setView('home'); setPrefill(null) }}
           onCancel={() => { setView('home'); setPrefill(null) }} />
       )}
-      {view === 'stats' && <StatsView days={days} monthLabel={m.label} monthFrom={m.from} monthTo={m.to} />}
+      {view === 'stats' && <StatsView expenseCats={expenseCats} />}
       {view === 'me' && <MeView me={me} accounts={accounts} expenseCats={expenseCats} onLogout={onLogout} onChanged={reload} />}
 
       <nav className="tabbar" aria-label="主导航">
@@ -261,14 +262,24 @@ function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, re
           <h2>现在可能要记</h2>
           <div className="chips">
             {recs.slice(0, 4).map((r, i) => (
-              <button key={i} className="chip" title={r.reason}
-                onClick={() => onEntry({ type: 'expense', categoryID: r.category_id, amountYuan: yuan(r.amount_hint_cents), instanceID: r.instance_id, fromID: r.account_id })}>
-                <span className="ic" style={{ background: 'var(--primary-soft)' }}>{r.icon || '💡'}</span>
-                <span>{r.category_name || r.rule_name}</span>
-              </button>
+              <div key={i} style={{ position: 'relative' }}>
+                <button className="chip" title={r.reason}
+                  onClick={() => onEntry({ type: 'expense', categoryID: r.category_id, amountYuan: yuan(r.amount_hint_cents), instanceID: r.instance_id, fromID: r.account_id })}>
+                  <span className="ic" style={{ background: 'var(--primary-soft)' }}>{r.icon || '💡'}</span>
+                  <span>{r.category_name || r.rule_name}</span>
+                </button>
+                {(r.kind === 'habit' || r.kind === 'recurrence') && (
+                  <button aria-label="不再提醒" title="不再提醒"
+                    style={{ position: 'absolute', top: -4, right: -2, border: 'none', background: 'var(--card)', borderRadius: '50%', width: 20, height: 20, fontSize: 11, color: 'var(--muted)', cursor: 'pointer', boxShadow: '0 1px 3px rgb(0 0 0 / 15%)' }}
+                    onClick={async () => {
+                      await api.dismissRecommendation(r.kind === 'habit' ? 'habit' : 'rule', (r.kind === 'habit' ? r.category_id : r.rule_id) ?? '')
+                      onChanged()
+                    }}>✕</button>
+                )}
+              </div>
             ))}
           </div>
-          <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{recs[0].reason}</div>
+          <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{recs[0].reason} · 点 ✕ 不再提醒</div>
         </div>
       )}
 
@@ -383,91 +394,6 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
   )
 }
 
-function StatsView({ days, monthLabel, monthFrom, monthTo }: {
-  days: DailySum[]; monthLabel: string; monthFrom: string; monthTo: string
-}) {
-  const [ov, setOv] = useState<Overview | null>(null)
-  const [nets, setNets] = useState<CategoryNet[]>([])
-  const [basis, setBasis] = useState<'accrual' | 'origin'>('accrual')
-  const [recv, setRecv] = useState<Receivable[]>([])
-  const [err, setErr] = useState('')
-
-  useEffect(() => {
-    Promise.all([api.overview(monthFrom, monthTo), api.receivables()])
-      .then(([o, r]) => { setOv(o); setRecv(r.receivables.filter((x) => !x.fully_settled)) })
-      .catch((e) => setErr(e instanceof ApiError ? e.message : '加载失败'))
-  }, [monthFrom, monthTo])
-
-  useEffect(() => {
-    api.statsCategories(monthFrom, monthTo, basis).then((r) => setNets(r.categories))
-      .catch(() => setNets([]))
-  }, [monthFrom, monthTo, basis])
-
-  const rows: [string, string][] = ov ? [
-    ['原收入', ov.gross_income_cents],
-    ['收入退回', ov.income_returns_cents],
-    ['净收入', ov.net_income_cents],
-    ['原费用', ov.gross_expense_cents],
-    ['退款', ov.refunds_cents],
-    ['净支出', ov.net_expense_cents],
-    ['收支结余', ov.balance_cents],
-  ] : []
-
-  return (
-    <>
-      <div className="greet"><h1>统计</h1><div className="sub">{monthLabel} · 按已确认记录计算</div></div>
-      {err && <div className="alert">{err}</div>}
-      <div className="panel">
-        <h2>收支概览</h2>
-        {rows.map(([label, v]) => (
-          <div className="tx" key={label}>
-            <div className="main"><div className="title">{label}</div></div>
-            <div className="amt">¥{formatCents(v)}</div>
-          </div>
-        ))}
-      </div>
-      <div className="panel">
-        <h2>每日支出</h2>
-        <Bars days={days} />
-      </div>
-      <div className="panel">
-        <h2>分类净额
-          <span className="more">
-            <button className="btn-text" style={{ padding: 2, minHeight: 0, color: basis === 'accrual' ? 'var(--primary-dark)' : 'var(--muted)' }} onClick={() => setBasis('accrual')}>发生期</button>
-            {' | '}
-            <button className="btn-text" style={{ padding: 2, minHeight: 0, color: basis === 'origin' ? 'var(--primary-dark)' : 'var(--muted)' }} onClick={() => setBasis('origin')}>原消费归属</button>
-          </span>
-        </h2>
-        {nets.length === 0 && <div className="empty">本月还没有支出。</div>}
-        {nets.map((n) => (
-          <div className="tx" key={n.category_id}>
-            <div className="main"><div className="title">{n.category_name}</div></div>
-            <div className="amt">¥{formatCents(n.net_cents)}</div>
-          </div>
-        ))}
-        <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.72rem', marginTop: 8 }}>
-          {basis === 'accrual' ? '发生期口径：退款按退款发生日计入所在期间。' : '原消费归属口径：退款归到原消费所在期间，截至当前更正后结果。'}
-        </div>
-      </div>
-      {recv.length > 0 && (
-        <div className="panel">
-          <h2>待收往来</h2>
-          {recv.map((r) => (
-            <div className="tx" key={r.original_tx_id}>
-              <div className="main">
-                <div className="title">{r.counterparty || '待报销/代付'}</div>
-                <div className="meta">{r.business_date.slice(0, 10)} · 应收 ¥{formatCents(r.created_cents)} · {r.age_days} 天</div>
-              </div>
-              <div className="amt" style={{ color: 'var(--expense)' }}>¥{formatCents(r.outstanding_cents)}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="notice">预算、资产负债与现金流预测将在统计阶段完整提供。</div>
-    </>
-  )
-}
-
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
@@ -574,6 +500,9 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
   const [advance, setAdvance] = useState('')
   const [counterparty, setCounterparty] = useState('')
   const [discount, setDiscount] = useState('')
+  const [merchant, setMerchant] = useState('')
+  const [catTouched, setCatTouched] = useState(false)
+  const [suggest, setSuggest] = useState<string | null>(null)
   const [opCp, setOpCp] = useState('')
   const [loanID, setLoanID] = useState('')
   const [principal, setPrincipal] = useState('')
@@ -583,6 +512,23 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
   const cats = type === 'income' ? incomeCats : expenseCats
   const opDate = () => new Date().toISOString()
   const yuanOf = (s: string) => { const [i, f = ''] = s.trim().split('.'); return `${i}.${f.padEnd(2, '0')}` }
+
+  // 商户 → 分类记忆：输入商户后给出建议，但绝不覆盖用户手动选择
+  useEffect(() => {
+    const q = merchant.trim()
+    if (q.length < 2 || type === 'transfer') { setSuggest(null); return }
+    const t = setTimeout(() => {
+      api.merchantSuggest(q).then((r) => {
+        if (r.suggestion) {
+          setSuggest(`历史习惯：${r.suggestion.merchant} → ${r.suggestion.category_name}`)
+          if (!catTouched && r.suggestion.category_id) setCatID(r.suggestion.category_id)
+        } else {
+          setSuggest(null)
+        }
+      }).catch(() => setSuggest(null))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [merchant, catTouched, type])
 
   async function submit(again: boolean) {
     setErr('')
@@ -657,7 +603,8 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
         category_id: type === 'transfer' || splits ? undefined : catID,
         splits,
         from_account_id: fromID || undefined, to_account_id: toID || undefined,
-        note: note || undefined, recurrence_instance_id: prefill?.instanceID,
+        note: note || undefined, merchant: merchant || undefined,
+        recurrence_instance_id: prefill?.instanceID,
         operation_id: crypto.randomUUID(),
       })
       onSaved(again)
@@ -700,12 +647,15 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
             {cats.map((c) => {
               const st = { icon: c.icon || catStyle(c.name).icon, bg: catStyle(c.name).bg }
               return (
-                <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => setCatID(c.id)}>
+                <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => { setCatID(c.id); setCatTouched(true) }}>
                   <span className="ic" style={{ background: st.bg }}>{st.icon}</span><span>{c.name}</span>
                 </button>
               )
             })}
           </div>
+        )}
+        {suggest && !op && type !== 'transfer' && (
+          <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.75rem', margin: '-6px 0 10px' }}>{suggest}</div>
         )}
 
         {op === 'loan_repay' && (
@@ -769,6 +719,8 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
               <>
                 <div className="field"><label>备注（可选）</label>
                   <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+                <div className="field"><label>商户（可选，会记住商户 → 分类习惯）</label>
+                  <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="例如：麦当劳、滴滴" /></div>
                 <div className="field"><label>支付优惠（如碰一碰立减，应付 = 实付 + 优惠）</label>
                   <input inputMode="decimal" placeholder="0.00" value={discount} onChange={(e) => setDiscount(e.target.value)} /></div>
                 <div className="field"><label>含代付/垫付金额（可选，将形成应收）</label>

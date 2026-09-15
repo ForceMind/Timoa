@@ -78,6 +78,16 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/recurrence/instances/{id}/postpone", s.requireAuth(http.HandlerFunc(s.postponeInstance)))
 	mux.Handle("GET /api/v1/recommendations", s.requireAuth(http.HandlerFunc(s.recommendations)))
 
+	mux.Handle("POST /api/v1/budgets", s.requireAuth(http.HandlerFunc(s.setBudget)))
+	mux.Handle("GET /api/v1/budgets/status", s.requireAuth(http.HandlerFunc(s.budgetStatus)))
+	mux.Handle("POST /api/v1/budgets/{id}/delete", s.requireAuth(http.HandlerFunc(s.deleteBudget)))
+	mux.Handle("POST /api/v1/goals", s.requireAuth(http.HandlerFunc(s.createGoal)))
+	mux.Handle("GET /api/v1/goals", s.requireAuth(http.HandlerFunc(s.listGoals)))
+	mux.Handle("POST /api/v1/goals/{id}/done", s.requireAuth(http.HandlerFunc(s.doneGoal)))
+	mux.Handle("GET /api/v1/stats/assets", s.requireAuth(http.HandlerFunc(s.assetsOverview)))
+	mux.Handle("POST /api/v1/recommendations/dismiss", s.requireAuth(http.HandlerFunc(s.dismissRecommendation)))
+	mux.Handle("GET /api/v1/suggest/merchant", s.requireAuth(http.HandlerFunc(s.merchantSuggest)))
+
 	mux.Handle("GET /api/v1/summary", s.requireAuth(http.HandlerFunc(s.summary)))
 	mux.Handle("GET /api/v1/stats/daily", s.requireAuth(http.HandlerFunc(s.statsDaily)))
 	mux.Handle("GET /api/v1/stats/overview", s.requireAuth(http.HandlerFunc(s.statsOverview)))

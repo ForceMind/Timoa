@@ -218,7 +218,7 @@ type ReceivableView struct {
 
 // Receivables 列出账本的应收往来（含已结清，供账龄与部分结清展示）。
 func (s *Service) Receivables(ledgerID string) ([]ReceivableView, error) {
-	// 来源：应收拆分 或 重分类
+	// 来源：应收拆分、借出/押金、重分类
 	rows, err := s.db.Query(`
 		SELECT id, business_date, COALESCE(counterparty,'') FROM (
 			SELECT t.id, t.business_date,
@@ -226,20 +226,34 @@ func (s *Service) Receivables(ledgerID string) ([]ReceivableView, error) {
 			FROM transactions t WHERE t.ledger_id=? AND t.type='expense' AND `+effectiveClause+`
 			AND EXISTS (SELECT 1 FROM transaction_splits sp WHERE sp.tx_id=t.id AND sp.part_type='receivable')
 			UNION
+			SELECT t.id, t.business_date, t.counterparty FROM transactions t
+			WHERE t.ledger_id=? AND t.type='lend' AND `+effectiveClause+`
+			UNION
 			SELECT o.id, o.business_date, (SELECT r.counterparty FROM transactions r WHERE r.link_id=o.id AND r.type='reclass' LIMIT 1)
 			FROM transactions o WHERE o.ledger_id=? AND EXISTS (
 				SELECT 1 FROM transactions r WHERE r.link_id=o.id AND r.type='reclass')
-		) ORDER BY business_date DESC`, ledgerID, ledgerID)
+		) ORDER BY business_date DESC`, ledgerID, ledgerID, ledgerID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	// 单连接数据库：先读完关闭游标，再逐笔算状态
 	var out []ReceivableView
 	for rows.Next() {
 		var v ReceivableView
 		if err := rows.Scan(&v.OriginalID, &v.BusinessDate, &v.Counterparty); err != nil {
+			rows.Close()
 			return nil, err
 		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	for i := range out {
+		v := &out[i]
 		sums, err := s.receivableSums(ledgerID, v.OriginalID)
 		if err != nil {
 			return nil, err
@@ -254,9 +268,8 @@ func (s *Service) Receivables(ledgerID string) ([]ReceivableView, error) {
 		if d, err := time.Parse("2006-01-02", v.BusinessDate[:min(10, len(v.BusinessDate))]); err == nil {
 			v.AgeDays = int(time.Since(d).Hours() / 24)
 		}
-		out = append(out, v)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 type receivableSums struct{ created, settled, writtenOff, refunded int64 }

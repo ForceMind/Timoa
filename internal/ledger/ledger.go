@@ -573,6 +573,29 @@ func (s *Service) postInTx(tx *sql.Tx, in PostInput) error {
 		return errf(500, "unbalanced_entries", "internal error: unbalanced entries")
 	}
 
+	// 商户 → 分类学习：用户确认过账即记忆，纠正（更正后新分类）会更新
+	// 后续建议；不自动改过去账单。
+	if in.Merchant != "" {
+		catForLearn := in.CategoryID
+		if catForLearn == "" {
+			for _, sp := range in.Splits {
+				if sp.PartType == "expense" || sp.PartType == "income" {
+					catForLearn = sp.CategoryID
+					break
+				}
+			}
+		}
+		if catForLearn != "" {
+			if _, err := tx.Exec(`INSERT INTO merchant_map(ledger_id,merchant,category_id,use_count,last_used_at)
+				VALUES(?,?,?,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+				ON CONFLICT(ledger_id,merchant) DO UPDATE SET
+					category_id=excluded.category_id, use_count=use_count+1, last_used_at=excluded.last_used_at`,
+				in.LedgerID, in.Merchant, catForLearn); err != nil {
+				return err
+			}
+		}
+	}
+
 	return audit(tx, in.LedgerID, in.ActorID, "transaction.post", "transaction", txID, map[string]any{
 		"type": in.Type, "amount_cents": in.AmountCents, "business_date": in.BusinessDate,
 	})

@@ -109,6 +109,15 @@ export const api = {
   statsCategories: (from: string, to: string, basis: string) =>
     req<{ basis: string; categories: CategoryNet[] }>(`/api/v1/stats/categories?from=${from}&to=${to}&basis=${basis}`),
   receivables: () => req<{ receivables: Receivable[] }>(`/api/v1/receivables`),
+  setBudget: (b: Record<string, unknown>) => req('/api/v1/budgets', { method: 'POST', body: JSON.stringify(b) }),
+  budgetStatus: (month: string) => req<{ budgets: BudgetStatus[] }>(`/api/v1/budgets/status?month=${month}`),
+  deleteBudget: (id: string) => req(`/api/v1/budgets/${id}/delete`, { method: 'POST' }),
+  createGoal: (b: Record<string, unknown>) => req('/api/v1/goals', { method: 'POST', body: JSON.stringify(b) }),
+  goals: () => req<{ goals: SavingsGoal[] }>('/api/v1/goals'),
+  doneGoal: (id: string, done: boolean) => req(`/api/v1/goals/${id}/done`, { method: 'POST', body: JSON.stringify({ done }) }),
+  assets: () => req<AssetsOverview>('/api/v1/stats/assets'),
+  dismissRecommendation: (kind: string, key: string) => req('/api/v1/recommendations/dismiss', { method: 'POST', body: JSON.stringify({ kind, key }) }),
+  merchantSuggest: (q: string) => req<{ suggestion: MerchantSuggestion | null }>(`/api/v1/suggest/merchant?q=${encodeURIComponent(q)}`),
   templates: () => req<{ templates: Template[] }>('/api/v1/templates'),
   pinTemplate: (id: string, pinned: boolean) => req(`/api/v1/templates/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned }) }),
   enableTemplate: (id: string, enabled: boolean) => req(`/api/v1/templates/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
@@ -179,6 +188,7 @@ export interface Recommendation {
   kind: 'recurrence' | 'habit' | 'recent' | 'pinned' | 'common'
   reason: string
   instance_id?: string
+  rule_id?: string
   rule_name?: string
   category_id?: string
   category_name?: string
@@ -186,6 +196,50 @@ export interface Recommendation {
   tx_type: string
   amount_hint_cents?: string
   account_id?: string
+}
+
+export interface BudgetStatus {
+  id: string
+  month: string
+  category_id?: string
+  category_name?: string
+  amount_cents: string
+  spent_cents: string
+  remaining_cents: string
+  percent: number
+  over: boolean
+  covers_children: boolean
+}
+
+export interface SavingsGoal {
+  id: string
+  name: string
+  target_cents: string
+  target_date?: string
+  account_id?: string
+  account_name?: string
+  note?: string
+  done: boolean
+  saved_cents: string
+  percent: number
+}
+
+export interface AssetsOverview {
+  asset_cents: string
+  liability_cents: string
+  receivable_cents: string
+  payable_cents: string
+  net_worth_cents: string
+  unconfirmed_count: number
+  scope: string
+}
+
+export interface MerchantSuggestion {
+  merchant: string
+  category_id: string
+  category_name: string
+  use_count: number
+  amount_hint_cents?: string
 }
 
 export interface DailySum {

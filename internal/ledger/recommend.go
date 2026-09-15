@@ -26,6 +26,7 @@ type Recommendation struct {
 	Kind       string `json:"kind"` // recurrence | habit | recent | pinned | common
 	Reason     string `json:"reason"`
 	InstanceID string `json:"instance_id,omitempty"`
+	RuleID     string `json:"rule_id,omitempty"`
 	RuleName   string `json:"rule_name,omitempty"`
 	CategoryID string `json:"category_id,omitempty"`
 	Category   string `json:"category_name,omitempty"`
@@ -37,9 +38,44 @@ type Recommendation struct {
 
 // Recommend 生成最多 4 个候选，附真实可解释原因。只读有效业务记录，
 // 排除作废/冲正/退款/内部转账；补记时调用方传入发生日期。
+// 记忆：商户学习（merchant_map）、上次金额提示；用户手动「不再提醒」
+// 的候选被过滤。
 func (s *Service) Recommend(ledgerID string, now time.Time) ([]Recommendation, error) {
 	out := []Recommendation{}
 	seen := map[string]bool{}
+
+	// 已屏蔽项
+	dismissed := map[string]bool{}
+	drows, err := s.db.Query(`SELECT kind, key FROM recommendation_dismissals WHERE ledger_id=?`, ledgerID)
+	if err != nil {
+		return nil, err
+	}
+	defer drows.Close()
+	for drows.Next() {
+		var k, key string
+		if err := drows.Scan(&k, &key); err != nil {
+			return nil, err
+		}
+		dismissed[k+":"+key] = true
+	}
+
+	// 上次金额记忆（每个分类最近一次有效记录金额）
+	lastAmount := map[string]int64{}
+	arows, err := s.db.Query(`SELECT t.category_id, t.amount_cents FROM transactions t
+		WHERE t.ledger_id=? AND t.type='expense' AND t.category_id IS NOT NULL AND `+effectiveClause+`
+		GROUP BY t.category_id HAVING MAX(t.created_at)`, ledgerID)
+	if err != nil {
+		return nil, err
+	}
+	defer arows.Close()
+	for arows.Next() {
+		var c string
+		var a int64
+		if err := arows.Scan(&c, &a); err != nil {
+			return nil, err
+		}
+		lastAmount[c] = a
+	}
 
 	// 1) 到期未完成的周期实例
 	pending, err := s.PendingInstances(ledgerID, now)
@@ -50,12 +86,16 @@ func (s *Service) Recommend(ledgerID string, now time.Time) ([]Recommendation, e
 		if len(out) >= maxCandidates {
 			break
 		}
+		if dismissed["rule:"+p.RuleID] {
+			continue // 用户已对此规则「不再提醒」
+		}
 		reason := "本期「" + p.RuleName + "」尚未确认"
 		if p.Status == "partial" && p.PlannedCents != "" {
 			reason = "「" + p.RuleName + "」部分已记，尚有剩余"
 		}
 		out = append(out, Recommendation{
 			Kind: "recurrence", Reason: reason, InstanceID: p.ID, RuleName: p.RuleName,
+			RuleID: p.RuleID,
 			CategoryID: p.CategoryID, TxType: p.TxType, AmountHint: p.PlannedCents, AccountID: p.AccountID,
 		})
 		seen["inst:"+p.ID] = true
@@ -80,13 +120,18 @@ func (s *Service) Recommend(ledgerID string, now time.Time) ([]Recommendation, e
 		if err := rows.Scan(&catID, &name, &icon, &n); err != nil {
 			return nil, err
 		}
-		if seen["cat:"+catID] {
+		if seen["cat:"+catID] || dismissed["habit:cat:"+catID] {
 			continue
 		}
-		out = append(out, Recommendation{
+		rec := Recommendation{
 			Kind: "habit", Reason: "你常在这一天记录「" + name + "」",
 			CategoryID: catID, Category: name, Icon: icon, TxType: "expense",
-		})
+		}
+		if a, ok := lastAmount[catID]; ok {
+			rec.AmountHint = i64s(a)
+			rec.Reason += "（上次 " + yuanText(a) + "）"
+		}
+		out = append(out, rec)
 		seen["cat:"+catID] = true
 	}
 
