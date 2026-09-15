@@ -17,7 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -338,6 +338,14 @@ func insertCategoryTx(tx *sql.Tx, ledgerID string, c *Category, parent any, sort
 // Posting transactions
 // ---------------------------------------------------------------------------
 
+// SplitInput 是拆分部分：一笔账单可拆成多个费用/应收（代付）部分。
+type SplitInput struct {
+	PartType     string // expense | receivable（income 单仅 expense→income）
+	CategoryID   string
+	Counterparty string // receivable 必填
+	AmountCents  int64
+}
+
 // PostInput is a validated posting request. AmountCents is int64 cents;
 // OperationID is the client idempotency key.
 type PostInput struct {
@@ -347,7 +355,8 @@ type PostInput struct {
 	BusinessDate  string // YYYY-MM-DD or RFC3339
 	DatePrecision string // datetime | day
 	AmountCents   int64
-	CategoryID    string // expense/income only
+	CategoryID    string // expense/income only（无拆分时）
+	Splits        []SplitInput
 	FromAccountID string // expense pays from; transfer source
 	ToAccountID   string // income pays to; transfer target
 	Note          string
@@ -368,12 +377,8 @@ func (in *PostInput) contentHash() string {
 		"type": in.Type, "date": in.BusinessDate, "amount": in.AmountCents,
 		"cat": in.CategoryID, "from": in.FromAccountID, "to": in.ToAccountID,
 		"note": in.Note, "merchant": in.Merchant, "channel": in.Channel,
+		"splits": in.Splits,
 	}
-	keys := make([]string, 0, len(payload))
-	for k := range payload {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 	buf, _ := json.Marshal(payload)
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:])
@@ -409,6 +414,23 @@ func (s *Service) Post(in PostInput) (*PostResult, error) {
 		return nil, err
 	}
 
+	if err := s.postInTx(tx, in); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM transactions WHERE ledger_id=? AND operation_id=?`,
+		in.LedgerID, in.OperationID).Scan(&id); err != nil {
+		return nil, err
+	}
+	return &PostResult{TxID: id}, nil
+}
+
+// postInTx posts inside an existing transaction (used by Post and by
+// Revise for the replacement version). Caller holds the write mutex.
+func (s *Service) postInTx(tx *sql.Tx, in PostInput) error {
 	txID := ids.New()
 	prec := in.DatePrecision
 	if prec == "" {
@@ -430,71 +452,113 @@ func (s *Service) Post(in PostInput) (*PostResult, error) {
 		VALUES(?,?,?,'posted',?,?,?,?,?,?,?,?,?,?,?,?)`,
 		txID, in.LedgerID, in.Type, in.BusinessDate, prec, in.AmountCents, cat, fromAcct, toAcct,
 		nullIfEmpty(in.Note), nullIfEmpty(in.Merchant), nullIfEmpty(in.Channel), in.ActorID, in.OperationID, in.contentHash()); err != nil {
-		return nil, err
+		return err
 	}
 
 	type entry struct {
 		subjectCode string
 		accountID   string
 		direction   string
+		amount      int64
 	}
 	var es []entry
-	switch in.Type {
-	case "expense":
-		es = []entry{
-			{"expense:cat:" + in.CategoryID, "", "debit"},
-			{"", in.FromAccountID, "credit"},
+
+	if len(in.Splits) > 0 {
+		// 拆分单：逐部分产生分录并落 transaction_splits
+		for _, sp := range in.Splits {
+			kind := "expense"
+			if in.Type == "income" {
+				kind = "income"
+			}
+			var spCat any
+			if sp.CategoryID != "" {
+				spCat = sp.CategoryID
+			}
+			var cp any
+			if sp.Counterparty != "" {
+				cp = sp.Counterparty
+			}
+			splitID := ids.New()
+			if _, err := tx.Exec(`INSERT INTO transaction_splits(id,tx_id,part_type,category_id,counterparty,amount_cents)
+				VALUES(?,?,?,?,?,?)`, splitID, txID, sp.PartType, spCat, cp, sp.AmountCents); err != nil {
+				return err
+			}
+			switch sp.PartType {
+			case "receivable":
+				es = append(es, entry{"subj:asset:receivable", "", "debit", sp.AmountCents})
+			default: // expense / income 部分
+				es = append(es, entry{kind + ":cat:" + sp.CategoryID, "", "debit", sp.AmountCents})
+			}
 		}
-	case "income":
-		es = []entry{
-			{"", in.ToAccountID, "debit"},
-			{"income:cat:" + in.CategoryID, "", "credit"},
+		// 资金侧：总额
+		if in.Type == "expense" {
+			es = append(es, entry{"", in.FromAccountID, "credit", in.AmountCents})
+		} else {
+			es = append(es, entry{"", in.ToAccountID, "debit", in.AmountCents})
 		}
-	case "transfer":
-		es = []entry{
-			{"", in.ToAccountID, "debit"},
-			{"", in.FromAccountID, "credit"},
+	} else {
+		switch in.Type {
+		case "expense":
+			es = []entry{
+				{"expense:cat:" + in.CategoryID, "", "debit", in.AmountCents},
+				{"", in.FromAccountID, "credit", in.AmountCents},
+			}
+		case "income":
+			es = []entry{
+				{"", in.ToAccountID, "debit", in.AmountCents},
+				{"income:cat:" + in.CategoryID, "", "credit", in.AmountCents},
+			}
+		case "transfer":
+			es = []entry{
+				{"", in.ToAccountID, "debit", in.AmountCents},
+				{"", in.FromAccountID, "credit", in.AmountCents},
+			}
 		}
 	}
 
 	var debitSum, creditSum int64
 	for _, e := range es {
-		subID, acctSubjectKind, err := resolveSubject(tx, in.LedgerID, e.subjectCode, e.accountID)
-		if err != nil {
-			return nil, err
+		var subID string
+		var err error
+		if e.accountID != "" {
+			err = tx.QueryRow(`SELECT subject_id FROM accounts WHERE id=?`, e.accountID).Scan(&subID)
+		} else if strings.HasPrefix(e.subjectCode, "subj:") {
+			err = tx.QueryRow(`SELECT id FROM subjects WHERE ledger_id=? AND code=?`,
+				in.LedgerID, strings.TrimPrefix(e.subjectCode, "subj:")).Scan(&subID)
+		} else {
+			err = tx.QueryRow(`SELECT id FROM subjects WHERE ledger_id=? AND code=?`, in.LedgerID, e.subjectCode).Scan(&subID)
 		}
-		_ = acctSubjectKind
+		if errors.Is(err, sql.ErrNoRows) {
+			return errf(400, "invalid_input", "subject not resolvable")
+		}
+		if err != nil {
+			return err
+		}
 		var acct any
 		if e.accountID != "" {
 			acct = e.accountID
 		}
 		if _, err := tx.Exec(`INSERT INTO entries(id,tx_id,subject_id,account_id,direction,amount_cents)
-			VALUES(?,?,?,?,?,?)`, ids.New(), txID, subID, acct, e.direction, in.AmountCents); err != nil {
-			return nil, err
+			VALUES(?,?,?,?,?,?)`, ids.New(), txID, subID, acct, e.direction, e.amount); err != nil {
+			return err
 		}
 		if e.direction == "debit" {
-			debitSum, err = money.CheckedAdd(debitSum, in.AmountCents)
+			debitSum, err = money.CheckedAdd(debitSum, e.amount)
 		} else {
-			creditSum, err = money.CheckedAdd(creditSum, in.AmountCents)
+			creditSum, err = money.CheckedAdd(creditSum, e.amount)
 		}
 		if err != nil {
-			return nil, errf(400, "amount_overflow", "amount aggregation overflow")
+			return errf(400, "amount_overflow", "amount aggregation overflow")
 		}
 	}
 	if debitSum != creditSum {
 		// Defense in depth: construction above always balances.
-		return nil, errf(500, "unbalanced_entries", "internal error: unbalanced entries")
+		return errf(500, "unbalanced_entries", "internal error: unbalanced entries")
 	}
 
-	if err := audit(tx, in.LedgerID, in.ActorID, "transaction.post", "transaction", txID, map[string]any{
+	return audit(tx, in.LedgerID, in.ActorID, "transaction.post", "transaction", txID, map[string]any{
 		"type": in.Type, "amount_cents": in.AmountCents, "business_date": in.BusinessDate,
-	}); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return &PostResult{TxID: txID}, nil
+	})
 }
 
 // validate checks business rules before opening a write transaction.
@@ -514,14 +578,46 @@ func (s *Service) validate(in *PostInput) error {
 		}
 	}
 	switch in.Type {
-	case "expense":
-		if err := s.requireCategory(in.LedgerID, in.CategoryID, "expense"); err != nil {
+	case "expense", "income":
+		kind := in.Type
+		if len(in.Splits) > 0 {
+			var sum int64
+			for _, sp := range in.Splits {
+				if sp.AmountCents <= 0 {
+					return ErrInvalidAmount
+				}
+				var err error
+				sum, err = money.CheckedAdd(sum, sp.AmountCents)
+				if err != nil {
+					return errf(400, "amount_overflow", "split total overflow")
+				}
+				switch sp.PartType {
+				case "expense", "income":
+					if sp.PartType != kind {
+						return errf(400, "invalid_input", "split part kind mismatch")
+					}
+					if err := s.requireCategory(in.LedgerID, sp.CategoryID, kind); err != nil {
+						return err
+					}
+				case "receivable":
+					if kind != "expense" {
+						return errf(400, "invalid_input", "receivable splits only on expenses")
+					}
+					if strings.TrimSpace(sp.Counterparty) == "" {
+						return errf(400, "invalid_input", "receivable split requires counterparty")
+					}
+				default:
+					return errf(400, "invalid_input", "unknown split part type %q", sp.PartType)
+				}
+			}
+			if sum != in.AmountCents {
+				return errf(400, "invalid_input", "splits must add up to the total amount")
+			}
+		} else if err := s.requireCategory(in.LedgerID, in.CategoryID, kind); err != nil {
 			return err
 		}
-		return s.requireAccount(in.LedgerID, in.FromAccountID)
-	case "income":
-		if err := s.requireCategory(in.LedgerID, in.CategoryID, "income"); err != nil {
-			return err
+		if in.Type == "expense" {
+			return s.requireAccount(in.LedgerID, in.FromAccountID)
 		}
 		return s.requireAccount(in.LedgerID, in.ToAccountID)
 	case "transfer":
@@ -676,25 +772,18 @@ type Summary struct {
 	AsOf         string `json:"as_of"`
 }
 
-// PeriodSummary sums income/expense for a [from,to) business-date window.
+// PeriodSummary sums net income/expense for a [from,to) business-date
+// window using the effective business projection: 净收入 = 有效收入 -
+// 收入退回；净支出 = 有效费用 - 费用退款（含重分类影响）。
 func (s *Service) PeriodSummary(ledgerID, from, to string) (*Summary, error) {
-	var income, expense int64
-	err := s.db.QueryRow(`SELECT
-		COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0),
-		COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0)
-		FROM transactions WHERE ledger_id=? AND status='posted'
-		AND business_date>=? AND business_date<?`, ledgerID, from, to).Scan(&income, &expense)
+	ov, err := s.Overview(ledgerID, from, to)
 	if err != nil {
 		return nil, err
 	}
-	net, err := money.CheckedAdd(income, -expense)
-	if err != nil {
-		return nil, errf(500, "amount_overflow", "summary overflow")
-	}
 	return &Summary{
-		IncomeCents:  fmt.Sprintf("%d", income),
-		ExpenseCents: fmt.Sprintf("%d", expense),
-		NetCents:     fmt.Sprintf("%d", net),
+		IncomeCents:  ov.NetIncomeCents,
+		ExpenseCents: ov.NetExpenseCents,
+		NetCents:     ov.BalanceCents,
 		AsOf:         nowUTC().Format(time.RFC3339),
 	}, nil
 }
@@ -710,11 +799,11 @@ type DailySum struct {
 // Dates are grouped by the ledger's business date (day precision prefix),
 // which the UI renders in the ledger timezone.
 func (s *Service) DailySums(ledgerID, from, to string) ([]DailySum, error) {
-	rows, err := s.db.Query(`SELECT substr(business_date,1,10) AS d,
-		COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0),
-		COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0)
-		FROM transactions WHERE ledger_id=? AND status='posted'
-		AND business_date>=? AND business_date<?
+	rows, err := s.db.Query(`SELECT substr(t.business_date,1,10) AS d,
+		COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount_cents WHEN t.type='income_refund' THEN -t.amount_cents END),0),
+		COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount_cents WHEN t.type='refund' THEN -t.amount_cents END),0)
+		FROM transactions t WHERE t.ledger_id=? AND `+effectiveClause+`
+		AND t.business_date>=? AND t.business_date<?
 		GROUP BY d ORDER BY d`, ledgerID, from, to)
 	if err != nil {
 		return nil, err

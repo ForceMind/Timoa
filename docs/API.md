@@ -28,13 +28,24 @@
 ## 交易（成员）
 
 - `GET /api/v1/transactions?limit=`
-- `POST /api/v1/transactions` `{type:expense|income|transfer, business_date, date_precision?, amount（元字符串）, category_id?, from_account_id?, to_account_id?, note?, merchant?, channel?, operation_id}`
-  - 幂等：相同 operation_id + 相同内容返回原交易（`replayed:true`）；不同内容 → 409 `idempotency_conflict`
-  - 错误码：`invalid_amount` `invalid_input` `account_not_found` `account_archived` `category_not_found` `cross_ledger` `unauthenticated` `permission_denied` `rate_limited`
+- `POST /api/v1/transactions` `{type, business_date, amount, category_id?, splits?[{part_type,category_id?,counterparty?,amount}], from_account_id?, to_account_id?, note?, operation_id}`
+- `GET /api/v1/transactions/{id}` → 详情（拆分、退款记录、应收状态、修订链）
+- `POST /api/v1/transactions/{id}/refund` `{allocations:[{split_id?,amount}], account_id, business_date?, operation_id}` → 409 `refund_cap_exceeded`
+- `POST /api/v1/transactions/{id}/income-refund` `{amount, account_id, operation_id}`
+- `POST /api/v1/transactions/{id}/settle` `{amount, account_id, counterparty?, operation_id}` → 409 `settlement_cap_exceeded`
+- `POST /api/v1/transactions/{id}/reclass` `{amount, counterparty, operation_id}` → 409 `reclass_cap_exceeded`
+- `POST /api/v1/transactions/{id}/writeoff` `{amount, reason, operation_id}`
+- `POST /api/v1/transactions/{id}/revise` `{reason, replacement?{type,business_date,amount,category_id,from_account_id?,to_account_id?}}` → 409 `dependency_blocked`
+- `GET /api/v1/receivables` → 应收往来（形成/已收/核销/待收/账龄）
 
-## 汇总
+幂等：所有写操作要求 operation_id；同内容重放返回原结果，异内容 409 `idempotency_conflict`。
 
-- `GET /api/v1/summary?from=YYYY-MM-DD&to=YYYY-MM-DD` → `{income_cents,expense_cents,net_cents,as_of}`（左闭右开）
+## 统计
+
+- `GET /api/v1/summary?from&to` → 净收入/净支出/结余
+- `GET /api/v1/stats/daily?from&to` → 每日收支
+- `GET /api/v1/stats/overview?from&to` → 原收入/收入退回/净收入/原费用/退款/净支出/结余
+- `GET /api/v1/stats/categories?from&to&basis=accrual|origin` → 分类净额（两种跨期口径）
 
 ## 服务器本地命令
 

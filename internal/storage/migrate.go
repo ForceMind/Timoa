@@ -54,6 +54,20 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 
+		// A migration may opt out of the wrapping transaction with a
+		// `-- +no_tx` first line (needed for SQLite table rebuilds that
+		// toggle foreign_keys, which is a no-op inside a transaction).
+		// Such files must manage their own BEGIN/COMMIT.
+		if strings.HasPrefix(string(body), "-- +no_tx") {
+			if _, err := db.Exec(string(body)); err != nil {
+				return fmt.Errorf("apply migration %s: %w", name, err)
+			}
+			if _, err := db.Exec(`INSERT INTO schema_migrations(version,name) VALUES(?,?)`, version, name); err != nil {
+				return fmt.Errorf("record migration %s: %w", name, err)
+			}
+			continue
+		}
+
 		tx, err := db.Begin()
 		if err != nil {
 			return err

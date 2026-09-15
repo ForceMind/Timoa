@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySum, type Me, type Summary, type Tx } from './api'
+import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type CategoryNet, type DailySum, type Me, type Overview, type Receivable, type Summary, type Tx } from './api'
 import { brand } from './brand'
+import { TxDetailView } from './detail'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
@@ -89,6 +90,7 @@ const catStyle = (name?: string) => (name && CAT_STYLE[name]) || { icon: '💴',
 
 function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>('home')
+  const [detailID, setDetailID] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expenseCats, setExpenseCats] = useState<Category[]>([])
   const [incomeCats, setIncomeCats] = useState<Category[]>([])
@@ -119,6 +121,9 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   useEffect(() => { reload() }, [reload])
 
+  const openDetail = (id: string) => setDetailID(id)
+  const nav = (v: View) => { setDetailID(null); setView(v) }
+
   if (accounts.length === 0 && view !== 'me') {
     return (
       <div className="shell">
@@ -129,24 +134,33 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
     )
   }
 
+  // 二级页面：账单详情（替换当前工作区，返回保留上下文）
+  if (detailID) {
+    return (
+      <div className="shell">
+        <TxDetailView id={detailID} accounts={accounts} onBack={() => setDetailID(null)} onChanged={reload} />
+      </div>
+    )
+  }
+
   return (
     <div className="shell">
       {err && <div className="alert" role="alert">{err}</div>}
-      {view === 'home' && <HomeView me={me} monthLabel={m.label} summary={summary} prevSummary={prevSummary} days={days} txs={txs} />}
-      {view === 'txs' && <TxsView txs={txs} />}
+      {view === 'home' && <HomeView me={me} monthLabel={m.label} summary={summary} prevSummary={prevSummary} days={days} txs={txs} onOpen={openDetail} />}
+      {view === 'txs' && <TxsView txs={txs} onOpen={openDetail} />}
       {view === 'entry' && (
         <EntryView accounts={accounts} expenseCats={expenseCats} incomeCats={incomeCats}
           onSaved={() => { reload(); setView('home') }} onCancel={() => setView('home')} />
       )}
-      {view === 'stats' && <StatsView days={days} summary={summary} monthLabel={m.label} />}
+      {view === 'stats' && <StatsView days={days} monthLabel={m.label} monthFrom={m.from} monthTo={m.to} />}
       {view === 'me' && <MeView me={me} accounts={accounts} onLogout={onLogout} />}
 
       <nav className="tabbar" aria-label="主导航">
-        <button className={view === 'home' ? 'on' : ''} onClick={() => setView('home')}><span className="ti">⌂</span>首页</button>
-        <button className={view === 'txs' ? 'on' : ''} onClick={() => setView('txs')}><span className="ti">☰</span>流水</button>
-        <button className="fab-wrap" onClick={() => setView('entry')} aria-label="记一笔"><span className="fab">＋</span><span>记一笔</span></button>
-        <button className={view === 'stats' ? 'on' : ''} onClick={() => setView('stats')}><span className="ti">▤</span>统计</button>
-        <button className={view === 'me' ? 'on' : ''} onClick={() => setView('me')}><span className="ti">☺</span>我的</button>
+        <button className={view === 'home' ? 'on' : ''} onClick={() => nav('home')}><span className="ti">⌂</span>首页</button>
+        <button className={view === 'txs' ? 'on' : ''} onClick={() => nav('txs')}><span className="ti">☰</span>流水</button>
+        <button className="fab-wrap" onClick={() => nav('entry')} aria-label="记一笔"><span className="fab">＋</span><span>记一笔</span></button>
+        <button className={view === 'stats' ? 'on' : ''} onClick={() => nav('stats')}><span className="ti">▤</span>统计</button>
+        <button className={view === 'me' ? 'on' : ''} onClick={() => nav('me')}><span className="ti">☺</span>我的</button>
       </nav>
     </div>
   )
@@ -161,9 +175,9 @@ function compareBadge(cur: string, prev: string): string | null {
   return `较上月 ${arrow}${abs}%`
 }
 
-function HomeView({ me, monthLabel, summary, prevSummary, days, txs }: {
+function HomeView({ me, monthLabel, summary, prevSummary, days, txs, onOpen }: {
   me: Me; monthLabel: string; summary: Summary | null; prevSummary: Summary | null
-  days: DailySum[]; txs: Tx[]
+  days: DailySum[]; txs: Tx[]; onOpen: (id: string) => void
 }) {
   const [tab, setTab] = useState<'all' | 'expense' | 'income' | 'transfer'>('all')
   const filtered = txs.filter((t) => tab === 'all' || t.type === tab).slice(0, 8)
@@ -200,7 +214,7 @@ function HomeView({ me, monthLabel, summary, prevSummary, days, txs }: {
       <div className="panel">
         <h2>最近记录</h2>
         {filtered.length === 0 && <div className="empty">还没有记录，点下方「记一笔」开始。</div>}
-        {filtered.map((t) => <TxRow key={t.id} t={t} />)}
+        {filtered.map((t) => <TxRow key={t.id} t={t} onOpen={onOpen} />)}
       </div>
     </>
   )
@@ -226,14 +240,14 @@ function Bars({ days }: { days: DailySum[] }) {
   )
 }
 
-function TxRow({ t }: { t: Tx }) {
+function TxRow({ t, onOpen }: { t: Tx; onOpen?: (id: string) => void }) {
   const st = catStyle(t.category_name)
-  const title = t.type === 'transfer' ? '转账' : t.category_name
+  const title = t.type === 'transfer' ? '转账' : t.category_name || '拆分账单'
   const sub = t.type === 'transfer'
     ? `${t.from_account_name} → ${t.to_account_name}`
     : t.type === 'expense' ? `${t.from_account_name}` : `${t.to_account_name}`
   return (
-    <div className="tx">
+    <div className="tx" onClick={onOpen ? () => onOpen(t.id) : undefined} style={onOpen ? { cursor: 'pointer' } : undefined}>
       <div className="icon" style={{ background: st.bg }}>{t.type === 'transfer' ? '🔁' : st.icon}</div>
       <div className="main">
         <div className="title">{title}{t.note ? ` · ${t.note}` : ''}</div>
@@ -246,7 +260,7 @@ function TxRow({ t }: { t: Tx }) {
   )
 }
 
-function TxsView({ txs }: { txs: Tx[] }) {
+function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
   const groups = new Map<string, Tx[]>()
   for (const t of txs) {
     const d = t.business_date.slice(0, 10)
@@ -255,33 +269,99 @@ function TxsView({ txs }: { txs: Tx[] }) {
   }
   return (
     <>
-      <div className="greet"><h1>流水</h1><div className="sub">全部已确认记录</div></div>
+      <div className="greet"><h1>流水</h1><div className="sub">全部已确认记录 · 点按查看详情与退款/更正</div></div>
       {txs.length === 0 && <div className="panel"><div className="empty">还没有账单。</div></div>}
       {[...groups.entries()].map(([d, list]) => (
         <div key={d}>
           <div className="date-group">{d}</div>
-          <div className="panel">{list.map((t) => <TxRow key={t.id} t={t} />)}</div>
+          <div className="panel">{list.map((t) => <TxRow key={t.id} t={t} onOpen={onOpen} />)}</div>
         </div>
       ))}
     </>
   )
 }
 
-function StatsView({ days, summary, monthLabel }: { days: DailySum[]; summary: Summary | null; monthLabel: string }) {
+function StatsView({ days, monthLabel, monthFrom, monthTo }: {
+  days: DailySum[]; monthLabel: string; monthFrom: string; monthTo: string
+}) {
+  const [ov, setOv] = useState<Overview | null>(null)
+  const [nets, setNets] = useState<CategoryNet[]>([])
+  const [basis, setBasis] = useState<'accrual' | 'origin'>('accrual')
+  const [recv, setRecv] = useState<Receivable[]>([])
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    Promise.all([api.overview(monthFrom, monthTo), api.receivables()])
+      .then(([o, r]) => { setOv(o); setRecv(r.receivables.filter((x) => !x.fully_settled)) })
+      .catch((e) => setErr(e instanceof ApiError ? e.message : '加载失败'))
+  }, [monthFrom, monthTo])
+
+  useEffect(() => {
+    api.statsCategories(monthFrom, monthTo, basis).then((r) => setNets(r.categories))
+      .catch(() => setNets([]))
+  }, [monthFrom, monthTo, basis])
+
+  const rows: [string, string][] = ov ? [
+    ['原收入', ov.gross_income_cents],
+    ['收入退回', ov.income_returns_cents],
+    ['净收入', ov.net_income_cents],
+    ['原费用', ov.gross_expense_cents],
+    ['退款', ov.refunds_cents],
+    ['净支出', ov.net_expense_cents],
+    ['收支结余', ov.balance_cents],
+  ] : []
+
   return (
     <>
       <div className="greet"><h1>统计</h1><div className="sub">{monthLabel} · 按已确认记录计算</div></div>
+      {err && <div className="alert">{err}</div>}
       <div className="panel">
         <h2>收支概览</h2>
-        <div className="tx"><div className="main"><div className="title">净收入</div></div><div className="amt income">+¥{summary ? formatCents(summary.income_cents) : '—'}</div></div>
-        <div className="tx"><div className="main"><div className="title">净支出</div></div><div className="amt expense">-¥{summary ? formatCents(summary.expense_cents) : '—'}</div></div>
-        <div className="tx"><div className="main"><div className="title">收支结余</div></div><div className="amt">¥{summary ? formatCents(summary.net_cents) : '—'}</div></div>
+        {rows.map(([label, v]) => (
+          <div className="tx" key={label}>
+            <div className="main"><div className="title">{label}</div></div>
+            <div className="amt">¥{formatCents(v)}</div>
+          </div>
+        ))}
       </div>
       <div className="panel">
         <h2>每日支出</h2>
         <Bars days={days} />
       </div>
-      <div className="notice">分类构成、预算、资产负债与现金流预测将在统计阶段完整提供。</div>
+      <div className="panel">
+        <h2>分类净额
+          <span className="more">
+            <button className="btn-text" style={{ padding: 2, minHeight: 0, color: basis === 'accrual' ? 'var(--primary-dark)' : 'var(--muted)' }} onClick={() => setBasis('accrual')}>发生期</button>
+            {' | '}
+            <button className="btn-text" style={{ padding: 2, minHeight: 0, color: basis === 'origin' ? 'var(--primary-dark)' : 'var(--muted)' }} onClick={() => setBasis('origin')}>原消费归属</button>
+          </span>
+        </h2>
+        {nets.length === 0 && <div className="empty">本月还没有支出。</div>}
+        {nets.map((n) => (
+          <div className="tx" key={n.category_id}>
+            <div className="main"><div className="title">{n.category_name}</div></div>
+            <div className="amt">¥{formatCents(n.net_cents)}</div>
+          </div>
+        ))}
+        <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.72rem', marginTop: 8 }}>
+          {basis === 'accrual' ? '发生期口径：退款按退款发生日计入所在期间。' : '原消费归属口径：退款归到原消费所在期间，截至当前更正后结果。'}
+        </div>
+      </div>
+      {recv.length > 0 && (
+        <div className="panel">
+          <h2>待收往来</h2>
+          {recv.map((r) => (
+            <div className="tx" key={r.original_tx_id}>
+              <div className="main">
+                <div className="title">{r.counterparty || '待报销/代付'}</div>
+                <div className="meta">{r.business_date.slice(0, 10)} · 应收 ¥{formatCents(r.created_cents)} · {r.age_days} 天</div>
+              </div>
+              <div className="amt" style={{ color: 'var(--expense)' }}>¥{formatCents(r.outstanding_cents)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="notice">预算、资产负债与现金流预测将在统计阶段完整提供。</div>
     </>
   )
 }
@@ -370,6 +450,9 @@ function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
   const [fromID, setFromID] = useState('')
   const [toID, setToID] = useState('')
   const [note, setNote] = useState('')
+  const [more, setMore] = useState(false)
+  const [advance, setAdvance] = useState('') // 代付/垫付金额
+  const [counterparty, setCounterparty] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -384,12 +467,29 @@ function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
     if ((type === 'expense' || type === 'transfer') && !fromID) { setErr('请选择付款账户'); return }
     if ((type === 'income' || type === 'transfer') && !toID) { setErr('请选择收款账户'); return }
     if (type === 'transfer' && fromID === toID) { setErr('转账账户不能相同'); return }
+
+    // 代付拆分：总额 = 自担费用 + 垫付应收
+    let splits: unknown
+    if (type === 'expense' && advance.trim() !== '') {
+      const adv = parseYuan(advance)
+      if (adv === null) { setErr('垫付金额格式不正确'); return }
+      if (!counterparty.trim()) { setErr('请填写垫付对象（如：朋友、同事）'); return }
+      const self = BigInt(cents) - BigInt(adv)
+      if (self <= 0n) { setErr('垫付金额必须小于总金额'); return }
+      const to2 = (v: bigint) => `${v / 100n}.${(v % 100n).toString().padStart(2, '0')}`
+      splits = [
+        { part_type: 'expense', category_id: catID, amount: to2(self) },
+        { part_type: 'receivable', counterparty: counterparty.trim(), amount: to2(BigInt(adv)) },
+      ]
+    }
+
     setBusy(true)
     try {
       const [i, f = ''] = amount.trim().split('.')
       await api.post({
         type, business_date: new Date().toISOString(), amount: `${i}.${f.padEnd(2, '0')}`,
-        category_id: type === 'transfer' ? undefined : catID,
+        category_id: type === 'transfer' || splits ? undefined : catID,
+        splits,
         from_account_id: fromID || undefined, to_account_id: toID || undefined,
         note: note || undefined, operation_id: crypto.randomUUID(),
       })
@@ -443,8 +543,30 @@ function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}（{formatCents(a.balance_cents)}）</option>)}
               </select></div>
           )}
-          <div className="field"><label>备注（可选）</label>
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+
+          {type === 'expense' && (
+            <>
+              <button type="button" className="btn-text" onClick={() => setMore(!more)}>
+                {more ? '收起 ▴' : '更多（备注 · 代付）▾'}
+              </button>
+              {more && (
+                <>
+                  <div className="field"><label>备注（可选）</label>
+                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+                  <div className="field"><label>含代付/垫付金额（可选，将形成应收）</label>
+                    <input inputMode="decimal" placeholder="0.00" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
+                  {advance.trim() !== '' && (
+                    <div className="field"><label>垫付对象</label>
+                      <input placeholder="例如：朋友小李" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          {type !== 'expense' && (
+            <div className="field"><label>备注（可选）</label>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+          )}
           <button className="btn" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
         </div>
       </form>

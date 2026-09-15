@@ -46,9 +46,20 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 
 	mux.Handle("GET /api/v1/transactions", s.requireAuth(http.HandlerFunc(s.listTransactions)))
 	mux.Handle("POST /api/v1/transactions", s.requireAuth(http.HandlerFunc(s.postTransaction)))
+	mux.Handle("GET /api/v1/transactions/{id}", s.requireAuth(http.HandlerFunc(s.txDetail)))
+	mux.Handle("POST /api/v1/transactions/{id}/refund", s.requireAuth(http.HandlerFunc(s.refund)))
+	mux.Handle("POST /api/v1/transactions/{id}/income-refund", s.requireAuth(http.HandlerFunc(s.incomeRefund)))
+	mux.Handle("POST /api/v1/transactions/{id}/settle", s.requireAuth(http.HandlerFunc(s.settle)))
+	mux.Handle("POST /api/v1/transactions/{id}/reclass", s.requireAuth(http.HandlerFunc(s.reclass)))
+	mux.Handle("POST /api/v1/transactions/{id}/writeoff", s.requireAuth(http.HandlerFunc(s.writeoff)))
+	mux.Handle("POST /api/v1/transactions/{id}/revise", s.requireAuth(http.HandlerFunc(s.revise)))
+
+	mux.Handle("GET /api/v1/receivables", s.requireAuth(http.HandlerFunc(s.receivables)))
 
 	mux.Handle("GET /api/v1/summary", s.requireAuth(http.HandlerFunc(s.summary)))
 	mux.Handle("GET /api/v1/stats/daily", s.requireAuth(http.HandlerFunc(s.statsDaily)))
+	mux.Handle("GET /api/v1/stats/overview", s.requireAuth(http.HandlerFunc(s.statsOverview)))
+	mux.Handle("GET /api/v1/stats/categories", s.requireAuth(http.HandlerFunc(s.statsCategories)))
 
 	return securityHeaders(sameOrigin(mux))
 }
@@ -360,6 +371,12 @@ func (s *server) postTransaction(w http.ResponseWriter, r *http.Request) {
 		DatePrecision string `json:"date_precision"`
 		AmountYuan    string `json:"amount"` // yuan string, exactly two decimals max
 		CategoryID    string `json:"category_id"`
+		Splits        []struct {
+			PartType     string `json:"part_type"`
+			CategoryID   string `json:"category_id"`
+			Counterparty string `json:"counterparty"`
+			Amount       string `json:"amount"`
+		} `json:"splits"`
 		FromAccountID string `json:"from_account_id"`
 		ToAccountID   string `json:"to_account_id"`
 		Note          string `json:"note"`
@@ -376,6 +393,18 @@ func (s *server) postTransaction(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid_amount", err.Error())
 		return
 	}
+	var splits []ledger.SplitInput
+	for _, sp := range body.Splits {
+		sc, err := money.ParseYuanRequired(sp.Amount)
+		if err != nil {
+			writeErr(w, 400, "invalid_amount", "split: "+err.Error())
+			return
+		}
+		splits = append(splits, ledger.SplitInput{
+			PartType: sp.PartType, CategoryID: sp.CategoryID,
+			Counterparty: sp.Counterparty, AmountCents: sc,
+		})
+	}
 	if body.DatePrecision == "day" && len(body.BusinessDate) > 10 {
 		body.BusinessDate = body.BusinessDate[:10]
 	}
@@ -387,6 +416,7 @@ func (s *server) postTransaction(w http.ResponseWriter, r *http.Request) {
 		DatePrecision: body.DatePrecision,
 		AmountCents:   cents,
 		CategoryID:    body.CategoryID,
+		Splits:        splits,
 		FromAccountID: body.FromAccountID,
 		ToAccountID:   body.ToAccountID,
 		Note:          body.Note,

@@ -60,6 +60,11 @@ func InitAdmin(db *sql.DB, username, displayName, password, ledgerName string) e
 	if err := ledger.SeedCoreCategories(tx, ledgerID); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
 	}
+	// 应收款项科目（代付/报销往来）
+	if _, err := tx.Exec(`INSERT INTO subjects(id,ledger_id,kind,code,name) VALUES(?,?,?,?,?)`,
+		"seed-recv-"+ledgerID, ledgerID, "asset", "asset:receivable", "应收款项"); err != nil {
+		return fmt.Errorf("seed receivable subject: %w", err)
+	}
 	if _, err := tx.Exec(`INSERT INTO audit_log(id,ledger_id,actor_user_id,action,entity_type,entity_id,detail)
 		VALUES(?,?,?,'admin.init','user',?,'{}')`, ids.New(), ledgerID, userID, userID); err != nil {
 		return err
