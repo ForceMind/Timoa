@@ -33,7 +33,7 @@ func (s *Service) ExportRows(ledgerID, from, to string) ([][]string, error) {
 	defer rows.Close()
 
 	yuan := func(c int64) string { return formatYuan(c) }
-	var out [][]string
+	out := [][]string{}
 	for rows.Next() {
 		var date, typ, fa, ta, cat, channel, merchant, note, cp, srcNo string
 		var amount, refunded, incRefunded int64

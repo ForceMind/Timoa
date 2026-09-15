@@ -195,7 +195,7 @@ func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 	}
 	defer rows.Close()
 
-	var out []Account
+	out := []Account{}
 	for rows.Next() {
 		var a Account
 		var opening int64
@@ -252,7 +252,7 @@ func (s *Service) ListCategories(ledgerID, kind string) ([]Category, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Category
+	out := []Category{}
 	for rows.Next() {
 		var c Category
 		var seed, archived int

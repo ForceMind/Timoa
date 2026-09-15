@@ -113,7 +113,7 @@ func (s *Service) BudgetStatusFor(ledgerID, month string) ([]BudgetStatus, error
 		byCat[p] += byCat[c]
 	}
 
-	var out []BudgetStatus
+	out := []BudgetStatus{}
 	for _, br := range brows {
 		st := br.BudgetStatus
 		amount := br.amount
@@ -200,7 +200,7 @@ func (s *Service) ListSavingsGoals(ledgerID string) ([]SavingsGoal, error) {
 		return nil, err
 	}
 	// 单连接数据库：先读完关闭游标，再逐条查余额
-	var out []SavingsGoal
+	out := []SavingsGoal{}
 	for rows.Next() {
 		var g SavingsGoal
 		var target, opening int64

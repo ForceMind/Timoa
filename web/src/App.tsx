@@ -4,6 +4,7 @@ import { brand } from './brand'
 import { DataPanel } from './data'
 import { TxDetailView } from './detail'
 import { RulesPanel, TemplatesPanel } from './manage'
+import { MembersPanel } from './members'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 import { StatsView } from './stats'
 
@@ -12,14 +13,56 @@ type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [booting, setBooting] = useState(true)
+  const [joinToken] = useState(() => new URLSearchParams(window.location.search).get('join'))
 
   useEffect(() => {
     api.me().then(setMe).catch(() => setMe(null)).finally(() => setBooting(false))
   }, [])
 
   if (booting) return <div className="shell"><p className="empty">加载中…</p></div>
-  if (!me) return <Login onLogin={setMe} />
+  if (!me) {
+    if (joinToken) return <JoinView token={joinToken} onJoined={setMe} />
+    return <Login onLogin={setMe} />
+  }
   return <Main me={me} onLogout={() => setMe(null)} />
+}
+
+function JoinView({ token, onJoined }: { token: string; onJoined: (m: Me) => void }) {
+  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true); setErr('')
+    try {
+      await api.join({ token, username, password, display_name: name || undefined })
+      window.history.replaceState({}, '', '/')
+      onJoined(await api.me())
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : '加入失败（邀请可能已使用或过期）')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="login-wrap">
+      <div className="logo">账</div>
+      <h1>{brand.name}</h1>
+      <p className="slogan">你受邀加入家庭账本。设置你的账号即可开始共同记账。</p>
+      {err && <div className="alert" role="alert">{err}</div>}
+      <form onSubmit={submit}>
+        <div className="field"><label htmlFor="jn">昵称</label>
+          <input id="jn" value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：妈妈" /></div>
+        <div className="field"><label htmlFor="ju">用户名</label>
+          <input id="ju" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required /></div>
+        <div className="field"><label htmlFor="jp">密码（至少 8 位）</label>
+          <input id="jp" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required minLength={8} /></div>
+        <button className="btn" disabled={busy}>{busy ? '加入中…' : '加入账本'}</button>
+      </form>
+    </div>
+  )
 }
 
 function Login({ onLogin }: { onLogin: (m: Me) => void }) {
@@ -115,14 +158,14 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
         api.transactions(100), api.summary(m.from, m.to), api.summary(m.prevFrom, m.prevTo),
         api.statsDaily(m.from, m.to), api.templates(), api.pending(), api.recommendations(),
       ])
-      setAccounts(a.accounts.filter((x) => !x.archived))
-      setExpenseCats(ec.categories.filter((x) => !x.archived))
-      setIncomeCats(ic.categories.filter((x) => !x.archived))
-      setTxs(t.transactions)
-      setSummary(s); setPrevSummary(ps); setDays(d.days)
-      setTemplates(tp.templates)
-      setPending(pd.instances)
-      setRecs(rc.recommendations)
+      setAccounts((a.accounts ?? []).filter((x) => !x.archived))
+      setExpenseCats((ec.categories ?? []).filter((x) => !x.archived))
+      setIncomeCats((ic.categories ?? []).filter((x) => !x.archived))
+      setTxs(t.transactions ?? [])
+      setSummary(s); setPrevSummary(ps); setDays(d.days ?? [])
+      setTemplates(tp.templates ?? [])
+      setPending(pd.instances ?? [])
+      setRecs(rc.recommendations ?? [])
       setErr('')
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : '加载失败')
@@ -397,7 +440,7 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
-  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data'>('')
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members'>('')
   return (
     <>
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
@@ -417,7 +460,10 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       </div>
       <div className="panel">
         <h2>管理</h2>
-        <div className="chips" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <button className="chip" onClick={() => setManage(manage === 'members' ? '' : 'members')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>👪</span><span>成员</span>
+          </button>
           <button className="chip" onClick={() => setManage(manage === 'templates' ? '' : 'templates')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>📋</span><span>模板</span>
           </button>
@@ -429,6 +475,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
           </button>
         </div>
       </div>
+      {manage === 'members' && <MembersPanel meID={me.user_id} isAdmin={me.role === 'admin'} onChanged={onChanged} />}
       {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
       {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}
       {manage === 'data' && <DataPanel accounts={accounts} expenseCats={expenseCats} onChanged={onChanged} />}

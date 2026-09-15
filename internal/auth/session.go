@@ -52,9 +52,12 @@ func CreateSession(db *sql.DB, userID, userAgent string) (token string, err erro
 	return token, err
 }
 
-// LookupSession resolves a token to a live session.
+// LookupSession resolves a token to a live session. Sessions of archived
+// (revoked) members are rejected even if not yet explicitly revoked.
 func LookupSession(db *sql.DB, token string) (*Session, error) {
-	row := db.QueryRow(`SELECT id,user_id,expires_at FROM sessions WHERE id=? AND revoked_at IS NULL`, sessionID(token))
+	row := db.QueryRow(`SELECT s.id,s.user_id,s.expires_at FROM sessions s
+		JOIN users u ON u.id=s.user_id
+		WHERE s.id=? AND s.revoked_at IS NULL AND u.archived_at IS NULL`, sessionID(token))
 	var s Session
 	var exp string
 	if err := row.Scan(&s.ID, &s.UserID, &exp); err != nil {

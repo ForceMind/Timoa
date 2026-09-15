@@ -101,7 +101,7 @@ func (s *Service) ListAttachments(ledgerID, txID string) ([]Attachment, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Attachment
+	out := []Attachment{}
 	for rows.Next() {
 		var a Attachment
 		if err := rows.Scan(&a.ID, &a.TxID, &a.FileName, &a.ContentType, &a.Size, &a.CreatedAt); err != nil {

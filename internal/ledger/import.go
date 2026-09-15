@@ -235,7 +235,7 @@ func (s *Service) ListImportBatches(ledgerID string) ([]ImportBatch, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ImportBatch
+	out := []ImportBatch{}
 	for rows.Next() {
 		var b ImportBatch
 		if err := rows.Scan(&b.ID, &b.Source, &b.Filename, &b.TotalRows, &b.Imported, &b.Skipped, &b.Failed, &b.Status, &b.CreatedAt); err != nil {

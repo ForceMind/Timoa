@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"xiaozhang/internal/auth"
 	"xiaozhang/internal/ledger"
 	"xiaozhang/internal/money"
 )
@@ -199,6 +200,12 @@ func (s *server) writeoff(w http.ResponseWriter, r *http.Request) {
 func (s *server) revise(w http.ResponseWriter, r *http.Request) {
 	m := s.mustMembership(w, r)
 	if m == nil {
+		return
+	}
+	// 普通成员只能更正自己创建的记录（服务端校验，不止隐藏按钮）
+	sess := auth.SessionFrom(r.Context())
+	if err := s.ledger.CanEditTx(m.ledgerID, sess.UserID, m.role, r.PathValue("id")); err != nil {
+		writeError(w, err)
 		return
 	}
 	var body struct {

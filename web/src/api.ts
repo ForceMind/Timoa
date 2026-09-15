@@ -118,6 +118,15 @@ export const api = {
   assets: () => req<AssetsOverview>('/api/v1/stats/assets'),
   dismissRecommendation: (kind: string, key: string) => req('/api/v1/recommendations/dismiss', { method: 'POST', body: JSON.stringify({ kind, key }) }),
   merchantSuggest: (q: string) => req<{ suggestion: MerchantSuggestion | null }>(`/api/v1/suggest/merchant?q=${encodeURIComponent(q)}`),
+  join: (b: { token: string; username: string; password: string; display_name?: string }) =>
+    req<{ user_id: string }>('/api/v1/auth/join', { method: 'POST', body: JSON.stringify(b) }),
+  createInvite: () => req<{ token: string; invite: Invite }>('/api/v1/invites', { method: 'POST' }),
+  invites: () => req<{ invites: Invite[] }>('/api/v1/invites'),
+  revokeInvite: (id: string) => req(`/api/v1/invites/${id}/revoke`, { method: 'POST' }),
+  members: () => req<{ members: Member[] }>('/api/v1/members'),
+  revokeMember: (id: string) => req(`/api/v1/members/${id}/revoke`, { method: 'POST' }),
+  forecast: () => req<Forecast>('/api/v1/stats/forecast'),
+  calendar: (month: string) => req<{ days: CalendarDay[] }>(`/api/v1/calendar?month=${month}`),
   templates: () => req<{ templates: Template[] }>('/api/v1/templates'),
   pinTemplate: (id: string, pinned: boolean) => req(`/api/v1/templates/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned }) }),
   enableTemplate: (id: string, enabled: boolean) => req(`/api/v1/templates/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
@@ -240,6 +249,32 @@ export interface MerchantSuggestion {
   category_name: string
   use_count: number
   amount_hint_cents?: string
+}
+
+export interface Invite { id: string; expires_at: string; used: boolean; revoked: boolean; created_at: string }
+export interface Member { user_id: string; username: string; display_name: string; role: string; archived: boolean; created_at: string }
+
+export interface Forecast {
+  month: string
+  elapsed_days: number
+  total_days: number
+  spent_cents: string
+  remaining_fixed_cents: string
+  variable_estimate_cents: string
+  expected_end_expense_cents: string
+  available_funds_cents: string
+  expected_income_cents: string
+  expected_end_funds_cents: string
+  gap: boolean
+  insufficient: boolean
+  basis: string
+}
+
+export interface CalendarDay {
+  date: string
+  expense_cents: string
+  income_cents: string
+  events?: { kind: string; name: string; status?: string; amount_cents?: string }[]
 }
 
 export interface DailySum {

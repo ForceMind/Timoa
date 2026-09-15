@@ -237,7 +237,7 @@ func (s *Service) Receivables(ledgerID string) ([]ReceivableView, error) {
 		return nil, err
 	}
 	// 单连接数据库：先读完关闭游标，再逐笔算状态
-	var out []ReceivableView
+	out := []ReceivableView{}
 	for rows.Next() {
 		var v ReceivableView
 		if err := rows.Scan(&v.OriginalID, &v.BusinessDate, &v.Counterparty); err != nil {

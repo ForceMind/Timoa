@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, ApiError, type AssetsOverview, type BudgetStatus, type Category, type CategoryNet, type DailySum, type Overview, type Receivable, type SavingsGoal } from './api'
 import { Chart } from './chart'
+import { CalendarPanel, ForecastPanel } from './forecast'
 import { formatCents, parseYuan } from './money'
 
 // 统计（一级页，页内切换）：概览 / 趋势 / 分类 / 预算 / 资产 / 目标 / 往来。
@@ -80,9 +81,9 @@ export function StatsView({ expenseCats }: { expenseCats: Category[] }) {
         api.budgetStatus(monthKey),
         api.assets(), api.goals(), api.receivables(),
       ])
-      setOv(o); setMom(mo); setYoy(yo); setDays(d.days); setNets(n.categories)
-      setBudgets(b.budgets); setAssets(a); setGoals(g.goals)
-      setRecv(r.receivables.filter((x) => !x.fully_settled))
+      setOv(o); setMom(mo); setYoy(yo); setDays(d.days ?? []); setNets(n.categories ?? [])
+      setBudgets(b.budgets ?? []); setAssets(a); setGoals(g.goals ?? [])
+      setRecv((r.receivables ?? []).filter((x) => !x.fully_settled))
       setErr('')
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : '加载失败')
@@ -185,6 +186,9 @@ export function StatsView({ expenseCats }: { expenseCats: Category[] }) {
       </div>
 
       <BudgetPanel month={monthKey} budgets={budgets} expenseCats={expenseCats} onChanged={load} />
+
+      <ForecastPanel />
+      <CalendarPanel month={monthKey} />
 
       {assets && (
         <div className="panel">
