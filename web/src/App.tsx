@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySum, type Me, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
 import { brand } from './brand'
+import { DataPanel } from './data'
 import { TxDetailView } from './detail'
 import { RulesPanel, TemplatesPanel } from './manage'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
@@ -169,7 +170,6 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
       )}
       {view === 'stats' && <StatsView expenseCats={expenseCats} />}
       {view === 'me' && <MeView me={me} accounts={accounts} expenseCats={expenseCats} onLogout={onLogout} onChanged={reload} />}
-
       <nav className="tabbar" aria-label="主导航">
         <button className={view === 'home' ? 'on' : ''} onClick={() => nav('home')}><span className="ti">⌂</span>首页</button>
         <button className={view === 'txs' ? 'on' : ''} onClick={() => nav('txs')}><span className="ti">☰</span>流水</button>
@@ -397,7 +397,7 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
-  const [manage, setManage] = useState<'' | 'templates' | 'rules' | ''>('')
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data'>('')
   return (
     <>
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
@@ -417,17 +417,21 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       </div>
       <div className="panel">
         <h2>管理</h2>
-        <div className="chips" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
           <button className="chip" onClick={() => setManage(manage === 'templates' ? '' : 'templates')}>
-            <span className="ic" style={{ background: 'var(--primary-soft)' }}>📋</span><span>模板管理</span>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>📋</span><span>模板</span>
           </button>
           <button className="chip" onClick={() => setManage(manage === 'rules' ? '' : 'rules')}>
-            <span className="ic" style={{ background: 'var(--primary-soft)' }}>🗓️</span><span>周期规则</span>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>🗓️</span><span>周期</span>
+          </button>
+          <button className="chip" onClick={() => setManage(manage === 'data' ? '' : 'data')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>📦</span><span>数据</span>
           </button>
         </div>
       </div>
       {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
       {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}
+      {manage === 'data' && <DataPanel accounts={accounts} expenseCats={expenseCats} onChanged={onChanged} />}
       <div className="panel">
         <h2>关于</h2>
         <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: 1.8 }}>

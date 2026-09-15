@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, type Account, type TxDetail } from './api'
+import { AttachmentsPanel } from './attachments'
 import { formatCents, parseYuan } from './money'
 
 // 账单详情（二级页面）：退款 / 收入退回 / 回款 / 核销 / 转待报销 / 更正 / 作废。
@@ -115,6 +116,8 @@ export function TxDetailView({ id, accounts, onBack, onChanged }: {
             <div className="amt" style={{ color: outstanding ? 'var(--expense)' : 'var(--income)' }}>¥{formatCents(d.receivable.outstanding_cents)}</div></div>
         </div>
       )}
+
+      <AttachmentsPanel txID={d.id} />
 
       {!d.reversed && action === null && (
         <div className="panel">

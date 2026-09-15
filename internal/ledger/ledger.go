@@ -367,6 +367,8 @@ type PostInput struct {
 	// RecurrenceInstanceID 关联周期实例：手工/模板记账确认本期事项，
 	// 同事务累计已关联金额，部分付款正确扣剩余计划。
 	RecurrenceInstanceID string
+	// SourceTxNo 导入来源单号（强去重，唯一索引）
+	SourceTxNo string
 }
 
 // PostResult is the outcome of a posting (or its idempotent replay).
@@ -455,11 +457,15 @@ func (s *Service) postInTx(tx *sql.Tx, in PostInput) error {
 	if in.RecurrenceInstanceID != "" {
 		recInst = in.RecurrenceInstanceID
 	}
+	var srcNo any
+	if in.SourceTxNo != "" {
+		srcNo = in.SourceTxNo
+	}
 	if _, err := tx.Exec(`INSERT INTO transactions
-		(id,ledger_id,type,status,business_date,date_precision,amount_cents,category_id,from_account_id,to_account_id,note,merchant,channel,recurrence_instance_id,created_by,operation_id,content_hash)
-		VALUES(?,?,?,'posted',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(id,ledger_id,type,status,business_date,date_precision,amount_cents,category_id,from_account_id,to_account_id,note,merchant,channel,recurrence_instance_id,source_tx_no,created_by,operation_id,content_hash)
+		VALUES(?,?,?,'posted',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		txID, in.LedgerID, in.Type, in.BusinessDate, prec, in.AmountCents, cat, fromAcct, toAcct,
-		nullIfEmpty(in.Note), nullIfEmpty(in.Merchant), nullIfEmpty(in.Channel), recInst, in.ActorID, in.OperationID, in.contentHash()); err != nil {
+		nullIfEmpty(in.Note), nullIfEmpty(in.Merchant), nullIfEmpty(in.Channel), recInst, srcNo, in.ActorID, in.OperationID, in.contentHash()); err != nil {
 		return err
 	}
 	// 周期实例确认（同事务）：已入账或部分入账扣除对应金额

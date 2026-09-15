@@ -212,10 +212,6 @@ func (s *Service) ListSavingsGoals(ledgerID string) ([]SavingsGoal, error) {
 		g.TargetCents = i64s(target)
 		g.Done = done == 1
 		g.SavedCents = "0"
-		if g.AccountID != "" {
-			// 进度 = 该账户自期初以来的净存入（opening 随行为防 GC 重新取）
-			g.TargetDate = g.TargetDate
-		}
 		out = append(out, g)
 		_ = opening
 	}
