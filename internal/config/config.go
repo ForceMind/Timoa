@@ -13,6 +13,8 @@ type Config struct {
 	DataDir string
 	// Version is the build version reported by /healthz.
 	Version string
+	// SecureCookies marks session cookies Secure (enable behind HTTPS).
+	SecureCookies bool
 }
 
 // Getenv returns the environment variable value or a fallback.

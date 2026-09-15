@@ -16,7 +16,19 @@ cd web && npm install && npm run dev
 
 ## 管理员初始化
 
-（阶段 1 提供初始化命令；不设置默认弱密码，关闭公开注册。）
+```bash
+# 关闭公开注册；首个管理员只能在服务器本机创建
+XIAOZHANG_ADMIN_PASSWORD='<至少8位>' go run ./cmd/xiaozhang init-admin -username admin
+# 忘记密码（需要服务器本机权限，吊销旧会话并写审计）
+XIAOZHANG_ADMIN_PASSWORD='<新密码>' go run ./cmd/xiaozhang reset-password -username admin
+```
+
+## 测试
+
+```bash
+go test ./...
+cd web && npx tsc --noEmit && npm run build
+```
 
 ## 文档
 
