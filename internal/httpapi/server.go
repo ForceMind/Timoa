@@ -48,6 +48,7 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/transactions", s.requireAuth(http.HandlerFunc(s.postTransaction)))
 
 	mux.Handle("GET /api/v1/summary", s.requireAuth(http.HandlerFunc(s.summary)))
+	mux.Handle("GET /api/v1/stats/daily", s.requireAuth(http.HandlerFunc(s.statsDaily)))
 
 	return securityHeaders(sameOrigin(mux))
 }
@@ -416,6 +417,24 @@ func (s *server) summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
+}
+
+func (s *server) statsDaily(w http.ResponseWriter, r *http.Request) {
+	m := s.mustMembership(w, r)
+	if m == nil {
+		return
+	}
+	from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if from == "" || to == "" {
+		writeErr(w, 400, "invalid_input", "from and to are required")
+		return
+	}
+	rows, err := s.ledger.DailySums(m.ledgerID, from, to)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"days": rows})
 }
 
 // ---------------------------------------------------------------------------

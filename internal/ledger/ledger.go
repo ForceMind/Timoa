@@ -699,6 +699,41 @@ func (s *Service) PeriodSummary(ledgerID, from, to string) (*Summary, error) {
 	}, nil
 }
 
+// DailySum is one calendar day's posted income/expense totals.
+type DailySum struct {
+	Date         string `json:"date"`
+	IncomeCents  string `json:"income_cents"`
+	ExpenseCents string `json:"expense_cents"`
+}
+
+// DailySums aggregates posted transactions per business day in [from,to).
+// Dates are grouped by the ledger's business date (day precision prefix),
+// which the UI renders in the ledger timezone.
+func (s *Service) DailySums(ledgerID, from, to string) ([]DailySum, error) {
+	rows, err := s.db.Query(`SELECT substr(business_date,1,10) AS d,
+		COALESCE(SUM(CASE WHEN type='income' THEN amount_cents END),0),
+		COALESCE(SUM(CASE WHEN type='expense' THEN amount_cents END),0)
+		FROM transactions WHERE ledger_id=? AND status='posted'
+		AND business_date>=? AND business_date<?
+		GROUP BY d ORDER BY d`, ledgerID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DailySum{}
+	for rows.Next() {
+		var d DailySum
+		var inc, exp int64
+		if err := rows.Scan(&d.Date, &inc, &exp); err != nil {
+			return nil, err
+		}
+		d.IncomeCents = fmt.Sprintf("%d", inc)
+		d.ExpenseCents = fmt.Sprintf("%d", exp)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

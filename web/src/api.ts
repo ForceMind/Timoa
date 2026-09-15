@@ -87,6 +87,13 @@ export const api = {
   post: (b: Record<string, unknown>) =>
     req<{ tx_id: string; replayed: boolean }>('/api/v1/transactions', { method: 'POST', body: JSON.stringify(b) }),
   summary: (from: string, to: string) => req<Summary>(`/api/v1/summary?from=${from}&to=${to}`),
+  statsDaily: (from: string, to: string) => req<{ days: DailySum[] }>(`/api/v1/stats/daily?from=${from}&to=${to}`),
+}
+
+export interface DailySum {
+  date: string
+  income_cents: string
+  expense_cents: string
 }
 
 export const ACCOUNT_TYPES: Record<string, string> = {
