@@ -1,0 +1,26 @@
+[Unit]
+Description=Timoa XiaoZhang (小账) personal & family accounting
+After=network.target
+
+[Service]
+Type=simple
+User=xiaozhang
+Group=xiaozhang
+Environment=XIAOZHANG_ADDR=127.0.0.1:8787
+Environment=XIAOZHANG_DATA_DIR=/var/lib/xiaozhang
+Environment=XIAOZHANG_SECURE_COOKIES=1
+Environment=XIAOZHANG_BACKUP_TIME=03:17
+# Environment=XIAOZHANG_BACKUP_KEY=   # 建议用 EnvironmentFile 注入
+# EnvironmentFile=-/etc/xiaozhang/env
+ExecStart=/usr/local/bin/xiaozhang serve
+Restart=on-failure
+RestartSec=3
+# 最小权限
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/xiaozhang
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

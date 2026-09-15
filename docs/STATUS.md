@@ -47,16 +47,25 @@
 - 日历视图：月历格子显示每日收支与周期事项（含信用卡还款日，🗓️ 标记未入账）。
 - 健壮性：Go 空切片统一返回 `[]` 而非 null（前端 .map 崩溃事故），前端数组字段兜底 `?? []`；main.tsx 全局错误兜底（渲染异常不再白屏）。
 
+## 已实现（部署与备份恢复新增）
+
+- 生产同源：前端构建产物嵌入 Go 单二进制（`scripts/build.sh`），SPA 回退、指纹资源 immutable 长缓存、index/API no-store。
+- 一致性备份：VACUUM INTO 快照 + 附件 + manifest（sha256 清单），快照完整性/外键/借贷平衡校验，`.part` 临时文件完整后改名；age 口令加密可选（未配置明示 unencrypted）；每日自动（03:17 可配）+ 手动 + 保留 14 个；管理端立即备份/下载需重新输密码。
+- 校验式恢复：临时目录校验（防穿越/版本/校验和/完整性/平衡）→ 当前数据安全备份 → 原子替换 → 撤销全部会话 + restore_generation；CLI `restore -yes` 需停服。
+- 部署文件：多阶段 Dockerfile（非 root、healthcheck、单容器）、compose.yaml（127.0.0.1 绑定、named volume）、systemd unit（最小权限）、Nginx/Apache 片段、.env.example、DEPLOYMENT.md、BACKUP_RESTORE.md。
+- 诊断：/api/v1/admin/diagnostics（版本/SQLite/迁移/备份状态）。
+
 ## 已验证（真实执行）
 
-- `go test ./...` 全绿（邀请单次/撤销/权限/会话失效、预测口径含缺口、日历事件）。
-- curl E2E：邀请→加入→令牌复用拒绝→成员建账户 403→撤销成员旧会话 401。
-- 浏览器走查：统计页（月底预测/日历）与成员面板（妈妈/邀请家人）完整渲染；定位并修复白屏（null.map）。
+- 演练测试 TestBackupRestoreDrill（T42/T43）：恢复后概览/余额/退款链/附件一致；篡改包拒绝。
+- 生产二进制实测：嵌入 SPA（HTML/缓存头/SPA 回退）、登录、管理端备份（re-auth）、诊断、CLI restore（校验→安全备份→恢复→旧会话 401）。
+- `go test ./...` 全绿；前端 tsc/build 通过。
+- 未验证（如实记录）：本机无 Docker，镜像构建未跑；生产 HTTPS 未验证。
 
 ## 未完成 / 下一步
 
-- 阶段 5：PWA（Manifest/图标/离线壳）、IndexedDB 本地草稿与操作队列、幂等同步、冲突处理、版本迁移。
-- 阶段 6：部署文件（Dockerfile/compose/systemd/反代）、备份恢复演练、性能测试、端到端回归。
+- 阶段 5：PWA（Manifest/图标/离线壳）、IndexedDB 本地草稿与操作队列、幂等同步、冲突处理、恢复世代对齐。
+- 阶段 6 收尾：性能测试（可复现数据量）、Docker 镜像构建验证（需有 Docker 的机器）、T45 主题/大字体、端到端回归。
 - 便笺 UI、子账户、储值券效期、分摊计划、多人开销配比、农历/法定工作日日历（docs/FEATURE_MAP）。
 
 ## 已知限制

@@ -20,3 +20,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 嵌入的前端产物（由 scripts/build.sh 生成；保留 index.html 占位）
+internal/webdist/dist/assets/
+build/
+data/

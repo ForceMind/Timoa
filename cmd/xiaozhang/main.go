@@ -6,18 +6,22 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"golang.org/x/term"
 
+	"xiaozhang/internal/backup"
 	"xiaozhang/internal/bootstrap"
 	"xiaozhang/internal/config"
 	"xiaozhang/internal/httpapi"
+	"xiaozhang/internal/ids"
 	"xiaozhang/internal/ledger"
 	"xiaozhang/internal/storage"
 )
@@ -36,6 +40,12 @@ func main() {
 			return
 		case "serve":
 			cmdServe(os.Args[2:])
+			return
+		case "backup":
+			cmdBackup(os.Args[2:])
+			return
+		case "restore":
+			cmdRestore(os.Args[2:])
 			return
 		}
 	}
@@ -120,6 +130,129 @@ func cmdResetPassword(args []string) {
 	fmt.Println("password updated; previous sessions revoked")
 }
 
+// cmdBackup 手动一致性备份。加密口令来自 XIAOZHANG_BACKUP_KEY。
+func cmdBackup(args []string) {
+	fs := flag.NewFlagSet("backup", flag.ExitOnError)
+	data := fs.String("data", config.Getenv("XIAOZHANG_DATA_DIR", "./data"), "data directory")
+	_ = fs.Parse(args)
+	db, err := openDBFull(*data)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	path, err := backup.Create(db, *data, os.Getenv("XIAOZHANG_BACKUP_KEY"), time.Now())
+	if err != nil {
+		log.Fatalf("backup: %v", err)
+	}
+	if err := backup.Prune(*data, 14); err != nil {
+		log.Printf("prune: %v", err)
+	}
+	fmt.Println("backup written:", path)
+	if os.Getenv("XIAOZHANG_BACKUP_KEY") == "" {
+		fmt.Println("note: unencrypted (set XIAOZHANG_BACKUP_KEY to encrypt; keep the passphrase separately)")
+	}
+}
+
+// cmdRestore 校验式恢复：独立临时目录校验 → 备份当前数据 → 停服换文件。
+// 需要应用已停止（CLI 离线操作）；恢复后旧会话失效、恢复世代更新。
+func cmdRestore(args []string) {
+	fs := flag.NewFlagSet("restore", flag.ExitOnError)
+	data := fs.String("data", config.Getenv("XIAOZHANG_DATA_DIR", "./data"), "data directory")
+	yes := fs.Bool("yes", false, "confirm overwriting current data (required)")
+	_ = fs.Parse(args)
+	pkg := fs.Arg(0)
+	if pkg == "" {
+		log.Fatal("usage: xiaozhang restore -data <dir> [-yes] <backup.tar.gz[.age]>")
+	}
+	if !*yes {
+		log.Fatal("restore overwrites current data; re-run with -yes after stopping the app")
+	}
+
+	tmp, err := backup.ValidateAndExtract(pkg, os.Getenv("XIAOZHANG_BACKUP_KEY"))
+	if err != nil {
+		log.Fatalf("backup validation failed: %v", err)
+	}
+	defer os.RemoveAll(tmp)
+	log.Printf("backup validated (integrity, foreign keys, balanced entries, checksums)")
+
+	// 先备份当前数据（可回退）
+	if _, err := os.Stat(filepath.Join(*data, "xiaozhang.db")); err == nil {
+		db, err := openDBFull(*data)
+		if err != nil {
+			log.Fatalf("open current database: %v", err)
+		}
+		safety, err := backup.Create(db, *data, "", time.Now())
+		db.Close()
+		if err != nil {
+			log.Fatalf("safety backup of current data failed: %v", err)
+		}
+		log.Printf("current data backed up to %s", safety)
+	}
+
+	// 换文件：先删 WAL/SHM，再原子替换
+	for _, suffix := range []string{"-wal", "-shm"} {
+		os.Remove(filepath.Join(*data, "xiaozhang.db"+suffix))
+	}
+	if err := os.MkdirAll(*data, 0o700); err != nil {
+		log.Fatal(err)
+	}
+	if err := copyFileIO(filepath.Join(tmp, "xiaozhang.db"), filepath.Join(*data, "xiaozhang.db")); err != nil {
+		log.Fatalf("restore database: %v", err)
+	}
+	// 附件
+	attSrc := filepath.Join(tmp, "attachments")
+	if entries, err := os.ReadDir(attSrc); err == nil {
+		dst := filepath.Join(*data, "attachments")
+		if err := os.MkdirAll(dst, 0o700); err != nil {
+			log.Fatal(err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if err := copyFileIO(filepath.Join(attSrc, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+				log.Fatalf("restore attachment %s: %v", e.Name(), err)
+			}
+		}
+	}
+	// 恢复世代：旧客户端必须重新对齐，不能盲目重放队列
+	db, err := openDBFull(*data)
+	if err != nil {
+		log.Fatalf("open restored database: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO app_meta(key,value) VALUES('restore_generation',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, ids.New()); err != nil {
+		log.Fatalf("set restore generation: %v", err)
+	}
+	// 恢复后撤销全部会话
+	if _, err := db.Exec(`UPDATE sessions SET revoked_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE revoked_at IS NULL`); err != nil {
+		log.Printf("revoke sessions: %v", err)
+	}
+	fmt.Println("restore complete; all sessions revoked, restore generation updated")
+}
+
+func copyFileIO(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
 func cmdServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", config.Getenv("XIAOZHANG_ADDR", "127.0.0.1:8787"), "listen address")
@@ -160,6 +293,30 @@ func cmdServe(args []string) {
 			if err := ledger.ScanRecurrence(db, time.Now()); err != nil {
 				log.Printf("recurrence scan: %v", err)
 			}
+		}
+	}()
+
+	// 每日自动备份（时间可配置，默认 03:17 避开整点）；状态落盘（文件即状态）
+	backupTime := config.Getenv("XIAOZHANG_BACKUP_TIME", "03:17")
+	go func() {
+		for {
+			now := time.Now()
+			h, m := 3, 17
+			fmt.Sscanf(backupTime, "%d:%d", &h, &m)
+			next := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+			if !next.After(now) {
+				next = next.Add(24 * time.Hour)
+			}
+			time.Sleep(time.Until(next))
+			path, err := backup.Create(db, cfg.DataDir, os.Getenv("XIAOZHANG_BACKUP_KEY"), time.Now())
+			if err != nil {
+				log.Printf("daily backup failed: %v", err)
+				continue
+			}
+			if err := backup.Prune(cfg.DataDir, 14); err != nil {
+				log.Printf("backup prune: %v", err)
+			}
+			log.Printf("daily backup written: %s", path)
 		}
 	}()
 

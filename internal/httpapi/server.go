@@ -106,6 +106,14 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("GET /api/v1/stats/forecast", s.requireAuth(http.HandlerFunc(s.forecast)))
 	mux.Handle("GET /api/v1/calendar", s.requireAuth(http.HandlerFunc(s.calendar)))
 
+	mux.Handle("POST /api/v1/admin/backup", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminBackupNow))))
+	mux.Handle("GET /api/v1/admin/backups", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminBackups))))
+	mux.Handle("POST /api/v1/admin/backups/{name}/download", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminDownloadBackup))))
+	mux.Handle("GET /api/v1/admin/diagnostics", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminDiagnostics))))
+
+	// 同源托管前端（生产）；/api 与 /healthz 已在上方优先匹配
+	mux.Handle("/", staticHandler())
+
 	mux.Handle("GET /api/v1/summary", s.requireAuth(http.HandlerFunc(s.summary)))
 	mux.Handle("GET /api/v1/stats/daily", s.requireAuth(http.HandlerFunc(s.statsDaily)))
 	mux.Handle("GET /api/v1/stats/overview", s.requireAuth(http.HandlerFunc(s.statsOverview)))

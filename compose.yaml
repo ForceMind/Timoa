@@ -1,0 +1,19 @@
+# 单应用容器（无需 Redis/外部数据库）。数据在 named volume，升级镜像不丢数据。
+services:
+  xiaozhang:
+    build: .
+    image: xiaozhang:latest
+    container_name: xiaozhang
+    restart: unless-stopped
+    # 仅绑定本机；由既有反向代理转发（不默认独占 80/443）
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      XIAOZHANG_SECURE_COOKIES: "1"     # 反向代理启用 HTTPS 后保持开启
+      XIAOZHANG_BACKUP_TIME: "03:17"
+      # XIAOZHANG_BACKUP_KEY: ""      # 设置后每日备份自动加密（口令另存）
+    volumes:
+      - xiaozhang-data:/data
+
+volumes:
+  xiaozhang-data:

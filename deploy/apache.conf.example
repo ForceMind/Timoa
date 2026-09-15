@@ -1,0 +1,8 @@
+# Apache 反向代理片段（需要 mod_proxy / mod_proxy_http）
+<Location "/xiaozhang/">
+    ProxyPass        "http://127.0.0.1:8787/"
+    ProxyPassReverse "http://127.0.0.1:8787/"
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader unset X-Forwarded-For
+    LimitRequestBody 12582912
+</Location>
