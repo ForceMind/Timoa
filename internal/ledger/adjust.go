@@ -743,13 +743,19 @@ func insertAlloc(tx *sql.Tx, refundID string, splitID *string, amount int64) err
 	return err
 }
 
-// receivableOutstanding：某原单的应收余额 = 应收拆分 + 重分类 - 结算 - 核销 - 应收部分退款。
+// receivableOutstanding：某原单的应收余额 = 应收拆分 + 借出/押金 + 重分类 - 结算 - 核销 - 应收部分退款。
 func receivableOutstanding(tx *sql.Tx, ledgerID, originalID string) (int64, error) {
 	var created, settled, writtenOff, refunded int64
-	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transaction_splits
-		WHERE tx_id=? AND part_type='receivable'`, originalID).Scan(&created); err != nil {
+	if err := tx.QueryRow(`SELECT COALESCE(amount_cents,0) FROM transactions WHERE id=? AND type='lend'`,
+		originalID).Scan(&created); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
+	var splitCreated int64
+	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transaction_splits
+		WHERE tx_id=? AND part_type='receivable'`, originalID).Scan(&splitCreated); err != nil {
+		return 0, err
+	}
+	created += splitCreated
 	var reclassed int64
 	if err := tx.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transactions t
 		WHERE t.link_id=? AND t.type='reclass' AND `+effectiveClause, originalID).Scan(&reclassed); err != nil {
@@ -847,7 +853,7 @@ type linkedTx struct {
 }
 
 func insertLinkedTx(tx *sql.Tx, in linkedTx) error {
-	var from, to, cp, reason, note any
+	var from, to, cp, reason, note, link any
 	if in.fromAccount != "" {
 		from = in.fromAccount
 	}
@@ -863,10 +869,13 @@ func insertLinkedTx(tx *sql.Tx, in linkedTx) error {
 	if in.note != "" {
 		note = in.note
 	}
+	if in.linkID != "" {
+		link = in.linkID
+	}
 	_, err := tx.Exec(`INSERT INTO transactions
 		(id,ledger_id,type,status,business_date,date_precision,amount_cents,link_id,from_account_id,to_account_id,counterparty,reason,note,created_by,operation_id,content_hash)
 		VALUES(?,?,?,'posted',?,'datetime',?,?,?,?,?,?,?,?,?,?)`,
-		in.id, in.ledgerID, in.typ, in.date, in.amount, in.linkID, from, to, cp, reason, note,
+		in.id, in.ledgerID, in.typ, in.date, in.amount, link, from, to, cp, reason, note,
 		in.actor, in.operationID, in.hash)
 	return err
 }

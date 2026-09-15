@@ -18,6 +18,7 @@ import (
 	"xiaozhang/internal/bootstrap"
 	"xiaozhang/internal/config"
 	"xiaozhang/internal/httpapi"
+	"xiaozhang/internal/ledger"
 	"xiaozhang/internal/storage"
 )
 
@@ -142,6 +143,25 @@ func cmdServe(args []string) {
 	if needs, err := bootstrap.NeedsInit(db); err == nil && needs {
 		log.Printf("no administrator yet; run: xiaozhang init-admin -data %s -username <name>", cfg.DataDir)
 	}
+
+	if err := ledger.EnsureSeeds(db); err != nil {
+		log.Fatalf("seed library: %v", err)
+	}
+
+	// 周期扫描：启动补查遗漏（幂等），之后每日扫描；状态在数据库，
+	// 不依赖用户打开页面。测试直接调用 ledger.ScanRecurrence 注入时间。
+	if err := ledger.ScanRecurrence(db, time.Now()); err != nil {
+		log.Printf("recurrence scan: %v", err)
+	}
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := ledger.ScanRecurrence(db, time.Now()); err != nil {
+				log.Printf("recurrence scan: %v", err)
+			}
+		}
+	}()
 
 	srv := httpapi.NewServer(cfg, db)
 	httpSrv := &http.Server{

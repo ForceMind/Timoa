@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type CategoryNet, type DailySum, type Me, type Overview, type Receivable, type Summary, type Tx } from './api'
+import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type CategoryNet, type DailySum, type Me, type Overview, type Receivable, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
 import { brand } from './brand'
 import { TxDetailView } from './detail'
+import { RulesPanel, TemplatesPanel } from './manage'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
@@ -91,6 +92,7 @@ const catStyle = (name?: string) => (name && CAT_STYLE[name]) || { icon: '💴',
 function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>('home')
   const [detailID, setDetailID] = useState<string | null>(null)
+  const [prefill, setPrefill] = useState<EntryPrefill | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expenseCats, setExpenseCats] = useState<Category[]>([])
   const [incomeCats, setIncomeCats] = useState<Category[]>([])
@@ -98,21 +100,27 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [prevSummary, setPrevSummary] = useState<Summary | null>(null)
   const [days, setDays] = useState<DailySum[]>([])
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [pending, setPending] = useState<RecurrenceInstance[]>([])
+  const [recs, setRecs] = useState<Recommendation[]>([])
   const [err, setErr] = useState('')
   const m = useMonth()
 
   const reload = useCallback(async () => {
     try {
-      const [a, ec, ic, t, s, ps, d] = await Promise.all([
+      const [a, ec, ic, t, s, ps, d, tp, pd, rc] = await Promise.all([
         api.accounts(), api.categories('expense'), api.categories('income'),
         api.transactions(100), api.summary(m.from, m.to), api.summary(m.prevFrom, m.prevTo),
-        api.statsDaily(m.from, m.to),
+        api.statsDaily(m.from, m.to), api.templates(), api.pending(), api.recommendations(),
       ])
       setAccounts(a.accounts.filter((x) => !x.archived))
       setExpenseCats(ec.categories.filter((x) => !x.archived))
       setIncomeCats(ic.categories.filter((x) => !x.archived))
       setTxs(t.transactions)
       setSummary(s); setPrevSummary(ps); setDays(d.days)
+      setTemplates(tp.templates)
+      setPending(pd.instances)
+      setRecs(rc.recommendations)
       setErr('')
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : '加载失败')
@@ -123,6 +131,7 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   const openDetail = (id: string) => setDetailID(id)
   const nav = (v: View) => { setDetailID(null); setView(v) }
+  const startEntry = (p: EntryPrefill | null) => { setPrefill(p); setView('entry') }
 
   if (accounts.length === 0 && view !== 'me') {
     return (
@@ -146,24 +155,39 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className="shell">
       {err && <div className="alert" role="alert">{err}</div>}
-      {view === 'home' && <HomeView me={me} monthLabel={m.label} summary={summary} prevSummary={prevSummary} days={days} txs={txs} onOpen={openDetail} />}
+      {view === 'home' && (
+        <HomeView me={me} monthLabel={m.label} summary={summary} prevSummary={prevSummary} days={days} txs={txs}
+          pending={pending} recs={recs} templates={templates}
+          onOpen={openDetail} onEntry={startEntry} onChanged={reload} />
+      )}
       {view === 'txs' && <TxsView txs={txs} onOpen={openDetail} />}
       {view === 'entry' && (
-        <EntryView accounts={accounts} expenseCats={expenseCats} incomeCats={incomeCats}
-          onSaved={() => { reload(); setView('home') }} onCancel={() => setView('home')} />
+        <EntryView accounts={accounts} expenseCats={expenseCats} incomeCats={incomeCats} prefill={prefill}
+          onSaved={(again) => { reload(); if (!again) setView('home'); setPrefill(null) }}
+          onCancel={() => { setView('home'); setPrefill(null) }} />
       )}
       {view === 'stats' && <StatsView days={days} monthLabel={m.label} monthFrom={m.from} monthTo={m.to} />}
-      {view === 'me' && <MeView me={me} accounts={accounts} onLogout={onLogout} />}
+      {view === 'me' && <MeView me={me} accounts={accounts} expenseCats={expenseCats} onLogout={onLogout} onChanged={reload} />}
 
       <nav className="tabbar" aria-label="主导航">
         <button className={view === 'home' ? 'on' : ''} onClick={() => nav('home')}><span className="ti">⌂</span>首页</button>
         <button className={view === 'txs' ? 'on' : ''} onClick={() => nav('txs')}><span className="ti">☰</span>流水</button>
-        <button className="fab-wrap" onClick={() => nav('entry')} aria-label="记一笔"><span className="fab">＋</span><span>记一笔</span></button>
+        <button className="fab-wrap" onClick={() => startEntry(null)} aria-label="记一笔"><span className="fab">＋</span><span>记一笔</span></button>
         <button className={view === 'stats' ? 'on' : ''} onClick={() => nav('stats')}><span className="ti">▤</span>统计</button>
         <button className={view === 'me' ? 'on' : ''} onClick={() => nav('me')}><span className="ti">☺</span>我的</button>
       </nav>
     </div>
   )
+}
+
+export interface EntryPrefill {
+  type?: 'expense' | 'income' | 'transfer'
+  categoryID?: string
+  amountYuan?: string
+  fromID?: string
+  toID?: string
+  note?: string
+  instanceID?: string
 }
 
 function compareBadge(cur: string, prev: string): string | null {
@@ -175,13 +199,20 @@ function compareBadge(cur: string, prev: string): string | null {
   return `较上月 ${arrow}${abs}%`
 }
 
-function HomeView({ me, monthLabel, summary, prevSummary, days, txs, onOpen }: {
+function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, recs, templates, onOpen, onEntry, onChanged }: {
   me: Me; monthLabel: string; summary: Summary | null; prevSummary: Summary | null
-  days: DailySum[]; txs: Tx[]; onOpen: (id: string) => void
+  days: DailySum[]; txs: Tx[]
+  pending: RecurrenceInstance[]; recs: Recommendation[]; templates: Template[]
+  onOpen: (id: string) => void
+  onEntry: (p: EntryPrefill) => void
+  onChanged: () => void
 }) {
   const [tab, setTab] = useState<'all' | 'expense' | 'income' | 'transfer'>('all')
   const filtered = txs.filter((t) => tab === 'all' || t.type === tab).slice(0, 8)
   const badge = summary && prevSummary ? compareBadge(summary.expense_cents, prevSummary.expense_cents) : null
+  const pinnedTpls = templates.filter((t) => t.enabled && t.pinned).slice(0, 8)
+
+  const yuan = (cents?: string) => cents ? (Number(cents) / 100).toFixed(2) : undefined
 
   return (
     <>
@@ -199,6 +230,62 @@ function HomeView({ me, monthLabel, summary, prevSummary, days, txs, onOpen }: {
           <span className="income"><span className="label">本月收入</span><br /><span className="v">¥ {summary ? formatCents(summary.income_cents) : '—'}</span></span>
         </div>
       </div>
+
+      {pending.length > 0 && (
+        <div className="panel">
+          <h2>待确认 <span className="more">周期事项不会自动入账</span></h2>
+          {pending.slice(0, 4).map((p) => (
+            <div className="tx" key={p.id}>
+              <div className="icon" style={{ background: 'var(--primary-soft)' }}>🗓️</div>
+              <div className="main">
+                <div className="title">{p.rule_name}</div>
+                <div className="meta">
+                  {p.planned_date}
+                  {p.planned_amount_cents ? ` · 计划 ¥${formatCents(p.planned_amount_cents)}` : ''}
+                  {p.status === 'partial' ? ` · 已记 ¥${formatCents(p.confirmed_amount_cents)}` : ''}
+                </div>
+              </div>
+              <button className="btn-text" onClick={() => onEntry({
+                type: 'expense', categoryID: p.category_id, fromID: p.account_id,
+                amountYuan: p.planned_amount_cents ? yuan((BigInt(p.planned_amount_cents) - BigInt(p.confirmed_amount_cents)).toString()) : undefined,
+                instanceID: p.id, note: p.rule_name,
+              })}>去记</button>
+              <button className="btn-text" onClick={async () => { await api.skipInstance(p.id); onChanged() }}>跳过</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recs.length > 0 && (
+        <div className="panel">
+          <h2>现在可能要记</h2>
+          <div className="chips">
+            {recs.slice(0, 4).map((r, i) => (
+              <button key={i} className="chip" title={r.reason}
+                onClick={() => onEntry({ type: 'expense', categoryID: r.category_id, amountYuan: yuan(r.amount_hint_cents), instanceID: r.instance_id, fromID: r.account_id })}>
+                <span className="ic" style={{ background: 'var(--primary-soft)' }}>{r.icon || '💡'}</span>
+                <span>{r.category_name || r.rule_name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.72rem' }}>{recs[0].reason}</div>
+        </div>
+      )}
+
+      {pinnedTpls.length > 0 && (
+        <div className="panel">
+          <h2>常用</h2>
+          <div className="chips">
+            {pinnedTpls.map((t) => (
+              <button key={t.id} className="chip"
+                onClick={() => onEntry({ type: t.tx_type === 'income' ? 'income' : 'expense', categoryID: t.category_id, amountYuan: yuan(t.fixed_amount_cents), note: t.name })}>
+                <span className="ic" style={{ background: 'var(--primary-soft)' }}>{t.icon || '▫️'}</span>
+                <span>{t.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="seg" role="tablist" aria-label="流水筛选">
         {([['all', '全部'], ['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([k, v]) => (
@@ -261,8 +348,20 @@ function TxRow({ t, onOpen }: { t: Tx; onOpen?: (id: string) => void }) {
 }
 
 function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<Tx[] | null>(null)
+
+  useEffect(() => {
+    if (!q.trim()) { setResults(null); return }
+    const t = setTimeout(() => {
+      api.search(q.trim()).then((r) => setResults(r.transactions)).catch(() => setResults([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q])
+
+  const list = results ?? txs
   const groups = new Map<string, Tx[]>()
-  for (const t of txs) {
+  for (const t of list) {
     const d = t.business_date.slice(0, 10)
     if (!groups.has(d)) groups.set(d, [])
     groups.get(d)!.push(t)
@@ -270,7 +369,10 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
   return (
     <>
       <div className="greet"><h1>流水</h1><div className="sub">全部已确认记录 · 点按查看详情与退款/更正</div></div>
-      {txs.length === 0 && <div className="panel"><div className="empty">还没有账单。</div></div>}
+      <div className="field">
+        <input placeholder="搜索备注、商户、对方、分类…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜索" />
+      </div>
+      {list.length === 0 && <div className="panel"><div className="empty">{results ? '没有匹配的账单。' : '还没有账单。'}</div></div>}
       {[...groups.entries()].map(([d, list]) => (
         <div key={d}>
           <div className="date-group">{d}</div>
@@ -366,7 +468,10 @@ function StatsView({ days, monthLabel, monthFrom, monthTo }: {
   )
 }
 
-function MeView({ me, accounts, onLogout }: { me: Me; accounts: Account[]; onLogout: () => void }) {
+function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
+  me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
+}) {
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | ''>('')
   return (
     <>
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
@@ -384,6 +489,19 @@ function MeView({ me, accounts, onLogout }: { me: Me; accounts: Account[]; onLog
         ))}
         {accounts.length === 0 && <div className="empty">还没有账户。</div>}
       </div>
+      <div className="panel">
+        <h2>管理</h2>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+          <button className="chip" onClick={() => setManage(manage === 'templates' ? '' : 'templates')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>📋</span><span>模板管理</span>
+          </button>
+          <button className="chip" onClick={() => setManage(manage === 'rules' ? '' : 'rules')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>🗓️</span><span>周期规则</span>
+          </button>
+        </div>
+      </div>
+      {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
+      {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}
       <div className="panel">
         <h2>关于</h2>
         <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: 1.8 }}>
@@ -440,27 +558,67 @@ function FirstAccount({ onCreated }: { onCreated: () => void }) {
   )
 }
 
-function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
+function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCancel }: {
   accounts: Account[]; expenseCats: Category[]; incomeCats: Category[]
-  onSaved: () => void; onCancel: () => void
+  prefill: EntryPrefill | null
+  onSaved: (again: boolean) => void; onCancel: () => void
 }) {
-  const [type, setType] = useState<'expense' | 'income' | 'transfer'>('expense')
-  const [amount, setAmount] = useState('')
-  const [catID, setCatID] = useState('')
-  const [fromID, setFromID] = useState('')
-  const [toID, setToID] = useState('')
-  const [note, setNote] = useState('')
+  const [type, setType] = useState<'expense' | 'income' | 'transfer'>(prefill?.type ?? 'expense')
+  const [op, setOp] = useState<'' | 'lend' | 'borrow' | 'loan_repay' | 'redeem'>('')
+  const [amount, setAmount] = useState(prefill?.amountYuan ?? '')
+  const [catID, setCatID] = useState(prefill?.categoryID ?? '')
+  const [fromID, setFromID] = useState(prefill?.fromID ?? '')
+  const [toID, setToID] = useState(prefill?.toID ?? '')
+  const [note, setNote] = useState(prefill?.note ?? '')
   const [more, setMore] = useState(false)
-  const [advance, setAdvance] = useState('') // 代付/垫付金额
+  const [advance, setAdvance] = useState('')
   const [counterparty, setCounterparty] = useState('')
+  const [discount, setDiscount] = useState('')
+  const [opCp, setOpCp] = useState('')
+  const [loanID, setLoanID] = useState('')
+  const [principal, setPrincipal] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
   const cats = type === 'income' ? incomeCats : expenseCats
+  const opDate = () => new Date().toISOString()
+  const yuanOf = (s: string) => { const [i, f = ''] = s.trim().split('.'); return `${i}.${f.padEnd(2, '0')}` }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
+  async function submit(again: boolean) {
     setErr('')
+    // 资金操作类
+    if (op) {
+      const cents = parseYuan(amount)
+      if (cents === null) { setErr('请输入正确金额'); return }
+      setBusy(true)
+      try {
+        if (op === 'lend' || op === 'borrow') {
+          if (!opCp.trim()) { setErr('请填写对方（如：朋友、房东）'); setBusy(false); return }
+          const fn = op === 'lend' ? api.lend : api.borrow
+          await fn({ business_date: opDate(), amount: yuanOf(amount), counterparty: opCp.trim(),
+            from_account_id: fromID || undefined, to_account_id: toID || undefined, note: note || undefined, operation_id: crypto.randomUUID() })
+        } else if (op === 'loan_repay') {
+          const pc = parseYuan(principal)
+          if (pc === null) { setErr('请填写本金部分'); setBusy(false); return }
+          if (!loanID) { setErr('请选择贷款账户'); setBusy(false); return }
+          if (!catID) { setErr('请选择利息分类'); setBusy(false); return }
+          await api.loanRepay({ business_date: opDate(), from_account_id: fromID, loan_account_id: loanID,
+            total: yuanOf(amount), principal: yuanOf(principal), interest_category_id: catID, note: note || undefined, operation_id: crypto.randomUUID() })
+        } else {
+          const pc = parseYuan(principal)
+          if (pc === null) { setErr('请填写本金部分'); setBusy(false); return }
+          if (!loanID) { setErr('请选择理财账户'); setBusy(false); return }
+          await api.redeem({ business_date: opDate(), to_account_id: toID, invest_account_id: loanID,
+            total: yuanOf(amount), principal: yuanOf(principal), yield_category_id: catID || undefined, note: note || undefined, operation_id: crypto.randomUUID() })
+        }
+        onSaved(again)
+        if (again) { setAmount(''); setNote(''); setBusy(false) }
+      } catch (e) {
+        setErr(e instanceof ApiError ? e.message : '保存失败'); setBusy(false)
+      }
+      return
+    }
+
     const cents = parseYuan(amount)
     if (cents === null) { setErr('请输入正确金额（最多两位小数，不能为 0）'); return }
     if (type !== 'transfer' && !catID) { setErr('请选择分类'); return }
@@ -468,36 +626,48 @@ function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
     if ((type === 'income' || type === 'transfer') && !toID) { setErr('请选择收款账户'); return }
     if (type === 'transfer' && fromID === toID) { setErr('转账账户不能相同'); return }
 
-    // 代付拆分：总额 = 自担费用 + 垫付应收
+    // 拆分：代付 / 支付优惠（应付 = 实付 + 优惠）
     let splits: unknown
-    if (type === 'expense' && advance.trim() !== '') {
-      const adv = parseYuan(advance)
-      if (adv === null) { setErr('垫付金额格式不正确'); return }
-      if (!counterparty.trim()) { setErr('请填写垫付对象（如：朋友、同事）'); return }
-      const self = BigInt(cents) - BigInt(adv)
-      if (self <= 0n) { setErr('垫付金额必须小于总金额'); return }
-      const to2 = (v: bigint) => `${v / 100n}.${(v % 100n).toString().padStart(2, '0')}`
-      splits = [
-        { part_type: 'expense', category_id: catID, amount: to2(self) },
-        { part_type: 'receivable', counterparty: counterparty.trim(), amount: to2(BigInt(adv)) },
-      ]
+    const to2 = (v: bigint) => `${v / 100n}.${(v % 100n).toString().padStart(2, '0')}`
+    const parts: { part_type: string; category_id?: string; counterparty?: string; amount: string }[] = []
+    if (type === 'expense' && (advance.trim() !== '' || discount.trim() !== '')) {
+      let self = BigInt(cents)
+      if (discount.trim() !== '') {
+        const d = parseYuan(discount)
+        if (d === null) { setErr('优惠金额格式不正确'); return }
+        self += BigInt(d) // 应付 = 实付 + 优惠
+        parts.push({ part_type: 'discount', category_id: catID, amount: to2(BigInt(d)) })
+      }
+      if (advance.trim() !== '') {
+        const adv = parseYuan(advance)
+        if (adv === null) { setErr('垫付金额格式不正确'); return }
+        if (!counterparty.trim()) { setErr('请填写垫付对象'); return }
+        self -= BigInt(adv)
+        parts.push({ part_type: 'receivable', counterparty: counterparty.trim(), amount: to2(BigInt(adv)) })
+      }
+      if (self <= 0n) { setErr('垫付金额必须小于应付金额'); return }
+      parts.unshift({ part_type: 'expense', category_id: catID, amount: to2(self) })
+      splits = parts
     }
 
     setBusy(true)
     try {
-      const [i, f = ''] = amount.trim().split('.')
       await api.post({
-        type, business_date: new Date().toISOString(), amount: `${i}.${f.padEnd(2, '0')}`,
+        type, business_date: new Date().toISOString(), amount: yuanOf(amount),
         category_id: type === 'transfer' || splits ? undefined : catID,
         splits,
         from_account_id: fromID || undefined, to_account_id: toID || undefined,
-        note: note || undefined, operation_id: crypto.randomUUID(),
+        note: note || undefined, recurrence_instance_id: prefill?.instanceID,
+        operation_id: crypto.randomUUID(),
       })
-      onSaved()
+      onSaved(again)
+      if (again) { setAmount(''); setNote(''); setAdvance(''); setDiscount(''); setBusy(false) }
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : '保存失败'); setBusy(false)
     }
   }
+
+  const OP_LABEL: Record<string, string> = { lend: '借出/押金', borrow: '借入', loan_repay: '房贷/车贷还款', redeem: '理财赎回' }
 
   return (
     <>
@@ -507,69 +677,118 @@ function EntryView({ accounts, expenseCats, incomeCats, onSaved, onCancel }: {
       </div>
       <div className="seg" role="tablist">
         {([['expense', '支出'], ['income', '收入'], ['transfer', '转账']] as const).map(([k, v]) => (
-          <button key={k} className={type === k ? 'on' : ''} onClick={() => { setType(k); setCatID('') }}>{v}</button>
+          <button key={k} className={type === k && !op ? 'on' : ''} onClick={() => { setType(k); setOp(''); setCatID('') }}>{v}</button>
         ))}
+        <button className={op ? 'on' : ''} onClick={() => setOp(op || 'lend')}>更多类型</button>
       </div>
-      {err && <div className="alert" role="alert">{err}</div>}
-      <form onSubmit={submit}>
-        <div className="panel">
-          <div className="amount-row">
-            <span>¥</span>
-            <input inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="金额" autoFocus />
-          </div>
-          {type !== 'transfer' && (
-            <div className="chips">
-              {cats.map((c) => {
-                const st = catStyle(c.name)
-                return (
-                  <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => setCatID(c.id)}>
-                    <span className="ic" style={{ background: st.bg }}>{st.icon}</span><span>{c.name}</span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          {(type === 'expense' || type === 'transfer') && (
-            <div className="field"><label>{type === 'expense' ? '付款账户' : '转出账户'}</label>
-              <select value={fromID} onChange={(e) => setFromID(e.target.value)}>
-                <option value="">请选择</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}（{formatCents(a.balance_cents)}）</option>)}
-              </select></div>
-          )}
-          {(type === 'income' || type === 'transfer') && (
-            <div className="field"><label>{type === 'income' ? '收款账户' : '转入账户'}</label>
-              <select value={toID} onChange={(e) => setToID(e.target.value)}>
-                <option value="">请选择</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}（{formatCents(a.balance_cents)}）</option>)}
-              </select></div>
-          )}
-
-          {type === 'expense' && (
-            <>
-              <button type="button" className="btn-text" onClick={() => setMore(!more)}>
-                {more ? '收起 ▴' : '更多（备注 · 代付）▾'}
-              </button>
-              {more && (
-                <>
-                  <div className="field"><label>备注（可选）</label>
-                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
-                  <div className="field"><label>含代付/垫付金额（可选，将形成应收）</label>
-                    <input inputMode="decimal" placeholder="0.00" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
-                  {advance.trim() !== '' && (
-                    <div className="field"><label>垫付对象</label>
-                      <input placeholder="例如：朋友小李" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-          {type !== 'expense' && (
-            <div className="field"><label>备注（可选）</label>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
-          )}
-          <button className="btn" disabled={busy}>{busy ? '保存中…' : '保存'}</button>
+      {op && (
+        <div className="seg">
+          {(Object.entries(OP_LABEL) as [typeof op, string][]).map(([k, v]) => (
+            <button key={k} className={op === k ? 'on' : ''} onClick={() => setOp(k)}>{v}</button>
+          ))}
         </div>
-      </form>
+      )}
+      {err && <div className="alert" role="alert">{err}</div>}
+      <div className="panel">
+        <div className="amount-row">
+          <span>¥</span>
+          <input inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="金额" autoFocus />
+        </div>
+
+        {!op && type !== 'transfer' && (
+          <div className="chips">
+            {cats.map((c) => {
+              const st = { icon: c.icon || catStyle(c.name).icon, bg: catStyle(c.name).bg }
+              return (
+                <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => setCatID(c.id)}>
+                  <span className="ic" style={{ background: st.bg }}>{st.icon}</span><span>{c.name}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {op === 'loan_repay' && (
+          <>
+            <div className="field"><label>本金部分（减负债，不算消费）</label>
+              <input inputMode="decimal" placeholder="0.00" value={principal} onChange={(e) => setPrincipal(e.target.value)} /></div>
+            <div className="field"><label>贷款账户（负债）</label>
+              <select value={loanID} onChange={(e) => setLoanID(e.target.value)}>
+                <option value="">请选择</option>
+                {accounts.filter((a) => ['loan_liability', 'credit_card', 'huabei'].includes(a.type)).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select></div>
+            <div className="field"><label>利息分类（利息 = 总额 - 本金）</label>
+              <select value={catID} onChange={(e) => setCatID(e.target.value)}>
+                <option value="">请选择</option>
+                {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></div>
+          </>
+        )}
+        {op === 'redeem' && (
+          <>
+            <div className="field"><label>本金部分（转回不算收入）</label>
+              <input inputMode="decimal" placeholder="0.00" value={principal} onChange={(e) => setPrincipal(e.target.value)} /></div>
+            <div className="field"><label>理财账户</label>
+              <select value={loanID} onChange={(e) => setLoanID(e.target.value)}>
+                <option value="">请选择</option>
+                {accounts.filter((a) => a.type === 'other_asset').map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select></div>
+            <div className="field"><label>已确认收益分类（收益 = 总额 - 本金）</label>
+              <select value={catID} onChange={(e) => setCatID(e.target.value)}>
+                <option value="">请选择</option>
+                {incomeCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></div>
+          </>
+        )}
+        {(op === 'lend' || op === 'borrow') && (
+          <div className="field"><label>{op === 'lend' ? '借给谁 / 押金对象' : '向谁借入'}</label>
+            <input placeholder="例如：朋友、房东（押金）" value={opCp} onChange={(e) => setOpCp(e.target.value)} /></div>
+        )}
+
+        {(type === 'expense' || type === 'transfer' || op === 'lend' || op === 'loan_repay') && op !== 'redeem' && op !== 'borrow' && (
+          <div className="field"><label>{op ? '付款账户' : type === 'expense' ? '付款账户' : '转出账户'}</label>
+            <select value={fromID} onChange={(e) => setFromID(e.target.value)}>
+              <option value="">请选择</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}（{formatCents(a.balance_cents)}）</option>)}
+            </select></div>
+        )}
+        {(type === 'income' || type === 'transfer' || op === 'borrow' || op === 'redeem') && (
+          <div className="field"><label>{op === 'borrow' ? '收至账户' : op === 'redeem' ? '赎回到账账户' : type === 'income' ? '收款账户' : '转入账户'}</label>
+            <select value={toID} onChange={(e) => setToID(e.target.value)}>
+              <option value="">请选择</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}（{formatCents(a.balance_cents)}）</option>)}
+            </select></div>
+        )}
+
+        {!op && type === 'expense' && (
+          <>
+            <button type="button" className="btn-text" onClick={() => setMore(!more)}>
+              {more ? '收起 ▴' : '更多（备注 · 代付 · 优惠）▾'}
+            </button>
+            {more && (
+              <>
+                <div className="field"><label>备注（可选）</label>
+                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+                <div className="field"><label>支付优惠（如碰一碰立减，应付 = 实付 + 优惠）</label>
+                  <input inputMode="decimal" placeholder="0.00" value={discount} onChange={(e) => setDiscount(e.target.value)} /></div>
+                <div className="field"><label>含代付/垫付金额（可选，将形成应收）</label>
+                  <input inputMode="decimal" placeholder="0.00" value={advance} onChange={(e) => setAdvance(e.target.value)} /></div>
+                {advance.trim() !== '' && (
+                  <div className="field"><label>垫付对象</label>
+                    <input placeholder="例如：朋友小李" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} /></div>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {(op || type !== 'expense') && (
+          <div className="field"><label>备注（可选）</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="一句话说明" /></div>
+        )}
+        <button className="btn" disabled={busy} onClick={() => submit(false)}>{busy ? '保存中…' : '保存'}</button>
+        <button className="btn" style={{ background: 'var(--card)', color: 'var(--primary-dark)', marginTop: 8 }} disabled={busy}
+          onClick={() => submit(true)}>保存并再记一笔</button>
+      </div>
     </>
   )
 }

@@ -50,6 +50,7 @@ export interface Category {
   parent_id?: string
   kind: 'expense' | 'income'
   name: string
+  icon?: string
   archived: boolean
 }
 
@@ -108,6 +109,83 @@ export const api = {
   statsCategories: (from: string, to: string, basis: string) =>
     req<{ basis: string; categories: CategoryNet[] }>(`/api/v1/stats/categories?from=${from}&to=${to}&basis=${basis}`),
   receivables: () => req<{ receivables: Receivable[] }>(`/api/v1/receivables`),
+  templates: () => req<{ templates: Template[] }>('/api/v1/templates'),
+  pinTemplate: (id: string, pinned: boolean) => req(`/api/v1/templates/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned }) }),
+  enableTemplate: (id: string, enabled: boolean) => req(`/api/v1/templates/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  rules: () => req<{ rules: RecurrenceRule[] }>('/api/v1/recurrence/rules'),
+  createRule: (b: Record<string, unknown>) => req('/api/v1/recurrence/rules', { method: 'POST', body: JSON.stringify(b) }),
+  enableRule: (id: string, enabled: boolean) => req(`/api/v1/recurrence/rules/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  pending: () => req<{ instances: RecurrenceInstance[] }>('/api/v1/recurrence/pending'),
+  skipInstance: (id: string) => req(`/api/v1/recurrence/instances/${id}/skip`, { method: 'POST' }),
+  postponeInstance: (id: string, date: string) => req(`/api/v1/recurrence/instances/${id}/postpone`, { method: 'POST', body: JSON.stringify({ date }) }),
+  recommendations: () => req<{ recommendations: Recommendation[] }>('/api/v1/recommendations'),
+  copyTx: (id: string) => req<{ tx_id: string }>(`/api/v1/transactions/${id}/copy`, { method: 'POST' }),
+  search: (q: string) => req<{ transactions: Tx[] }>(`/api/v1/search?q=${encodeURIComponent(q)}`),
+  lend: (b: Record<string, unknown>) => req('/api/v1/money/lend', { method: 'POST', body: JSON.stringify(b) }),
+  borrow: (b: Record<string, unknown>) => req('/api/v1/money/borrow', { method: 'POST', body: JSON.stringify(b) }),
+  repay: (b: Record<string, unknown>) => req('/api/v1/money/repay', { method: 'POST', body: JSON.stringify(b) }),
+  loanRepay: (b: Record<string, unknown>) => req('/api/v1/money/loan-repay', { method: 'POST', body: JSON.stringify(b) }),
+  redeem: (b: Record<string, unknown>) => req('/api/v1/money/redeem', { method: 'POST', body: JSON.stringify(b) }),
+}
+
+export interface Template {
+  id: string
+  name: string
+  icon?: string
+  tx_type: string
+  category_id?: string
+  category_name?: string
+  default_account_id?: string
+  amount_policy: string
+  fixed_amount_cents?: string
+  pinned: boolean
+  enabled: boolean
+  is_seed: boolean
+}
+
+export interface RecurrenceRule {
+  id: string
+  name: string
+  tx_type: string
+  category_id?: string
+  category_name?: string
+  account_id?: string
+  frequency: string
+  interval_days?: number
+  by_weekday?: number
+  month_day?: number
+  anchor_date: string
+  start_date: string
+  amount_policy: string
+  fixed_amount_cents?: string
+  enabled: boolean
+}
+
+export interface RecurrenceInstance {
+  id: string
+  rule_id: string
+  rule_name?: string
+  period_key: string
+  planned_date: string
+  planned_amount_cents?: string
+  status: string
+  confirmed_amount_cents: string
+  tx_type?: string
+  category_id?: string
+  account_id?: string
+}
+
+export interface Recommendation {
+  kind: 'recurrence' | 'habit' | 'recent' | 'pinned' | 'common'
+  reason: string
+  instance_id?: string
+  rule_name?: string
+  category_id?: string
+  category_name?: string
+  icon?: string
+  tx_type: string
+  amount_hint_cents?: string
+  account_id?: string
 }
 
 export interface DailySum {

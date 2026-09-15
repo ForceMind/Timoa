@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -33,6 +34,17 @@ func (s *Service) Overview(ledgerID, from, to string) (*Overview, error) {
 		AND t.business_date>=? AND t.business_date<?`, ledgerID, from, to).Scan(&grossInc); err != nil {
 		return nil, err
 	}
+	// 理财赎回的已确认收益计入收入（redeem 单上收入科目贷方）
+	var redeemYield int64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(e.amount_cents),0) FROM entries e
+		JOIN transactions t ON t.id=e.tx_id
+		JOIN subjects su ON su.id=e.subject_id
+		WHERE t.ledger_id=? AND su.kind='income' AND e.direction='credit' AND t.type='redeem'
+		AND `+effectiveClause+` AND t.business_date>=? AND t.business_date<?`,
+		ledgerID, from, to).Scan(&redeemYield); err != nil {
+		return nil, err
+	}
+	grossInc += redeemYield
 	if err := s.db.QueryRow(`SELECT COALESCE(SUM(t.amount_cents),0) FROM transactions t
 		WHERE t.ledger_id=? AND t.type='income_refund' AND `+effectiveClause+`
 		AND t.business_date>=? AND t.business_date<?`, ledgerID, from, to).Scan(&incRet); err != nil {
@@ -62,10 +74,20 @@ func (s *Service) Overview(ledgerID, from, to string) (*Overview, error) {
 		return nil, err
 	}
 	// 原费用只含 expense；writeoff 是核销转回，单列进净支出
-	var grossExpOnly int64
+	var grossExpOnly, discountCredits, loanInterest int64
 	if grossExpOnly, err = expQ("debit", "expense"); err != nil {
 		return nil, err
 	}
+	// 房贷/车贷利息计入费用（loan_repay 单上费用科目借方）
+	if loanInterest, err = expQ("debit", "loan_repay"); err != nil {
+		return nil, err
+	}
+	grossExpOnly += loanInterest
+	// 支付优惠冲减费用（expense 单上的 credit 只可能来自 discount 拆分）
+	if discountCredits, err = expQ("credit", "expense"); err != nil {
+		return nil, err
+	}
+	grossExpOnly -= discountCredits
 	if writeoffIn, err = expQ("debit", "writeoff"); err != nil {
 		return nil, err
 	}
@@ -241,10 +263,23 @@ type receivableSums struct{ created, settled, writtenOff, refunded int64 }
 
 func (s *Service) receivableSums(ledgerID, originalID string) (receivableSums, error) {
 	var r receivableSums
-	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transaction_splits
-		WHERE tx_id=? AND part_type='receivable'`, originalID).Scan(&r.created); err != nil {
+	// lend（借出/押金）原单整体形成应收；非 lend 原单返回 no rows
+	var lendAmt sql.NullInt64
+	if err := s.db.QueryRow(`SELECT amount_cents FROM transactions WHERE id=? AND type='lend' AND status='posted'`,
+		originalID).Scan(&lendAmt.Int64); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return r, err
 	}
+	if lendAmt.Valid {
+		lendAmt.Int64 = 0 // Scan 到 NULL 时不应发生；金额走下行
+	}
+	_ = s.db.QueryRow(`SELECT amount_cents FROM transactions WHERE id=? AND type='lend' AND status='posted'`,
+		originalID).Scan(&r.created)
+	var splitCreated int64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transaction_splits
+		WHERE tx_id=? AND part_type='receivable'`, originalID).Scan(&splitCreated); err != nil {
+		return r, err
+	}
+	r.created += splitCreated
 	var reclassed int64
 	if err := s.db.QueryRow(`SELECT COALESCE(SUM(amount_cents),0) FROM transactions t
 		WHERE t.link_id=? AND t.type='reclass' AND `+effectiveClause, originalID).Scan(&reclassed); err != nil {

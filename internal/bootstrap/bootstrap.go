@@ -60,10 +60,18 @@ func InitAdmin(db *sql.DB, username, displayName, password, ledgerName string) e
 	if err := ledger.SeedCoreCategories(tx, ledgerID); err != nil {
 		return fmt.Errorf("seed categories: %w", err)
 	}
-	// 应收款项科目（代付/报销往来）
-	if _, err := tx.Exec(`INSERT INTO subjects(id,ledger_id,kind,code,name) VALUES(?,?,?,?,?)`,
-		"seed-recv-"+ledgerID, ledgerID, "asset", "asset:receivable", "应收款项"); err != nil {
-		return fmt.Errorf("seed receivable subject: %w", err)
+	if err := ledger.SeedLibrary(tx, ledgerID); err != nil {
+		return fmt.Errorf("seed library: %w", err)
+	}
+	// 应收/应付科目（代付/报销/借还往来）
+	for _, s := range []struct{ id, kind, code, name string }{
+		{"seed-recv-" + ledgerID, "asset", "asset:receivable", "应收款项"},
+		{"seed-pay-" + ledgerID, "liability", "liability:payable", "应付款项"},
+	} {
+		if _, err := tx.Exec(`INSERT INTO subjects(id,ledger_id,kind,code,name) VALUES(?,?,?,?,?)`,
+			s.id, ledgerID, s.kind, s.code, s.name); err != nil {
+			return fmt.Errorf("seed subjects: %w", err)
+		}
 	}
 	if _, err := tx.Exec(`INSERT INTO audit_log(id,ledger_id,actor_user_id,action,entity_type,entity_id,detail)
 		VALUES(?,?,?,'admin.init','user',?,'{}')`, ids.New(), ledgerID, userID, userID); err != nil {

@@ -232,13 +232,14 @@ type Category struct {
 	ParentID string `json:"parent_id,omitempty"`
 	Kind     string `json:"kind"`
 	Name     string `json:"name"`
+	Icon     string `json:"icon,omitempty"`
 	Sort     int    `json:"sort"`
 	Seed     bool   `json:"is_seed"`
 	Archived bool   `json:"archived"`
 }
 
 func (s *Service) ListCategories(ledgerID, kind string) ([]Category, error) {
-	q := `SELECT id,COALESCE(parent_id,''),kind,name,sort,is_seed,archived_at IS NOT NULL
+	q := `SELECT id,COALESCE(parent_id,''),kind,name,COALESCE(icon,''),sort,is_seed,archived_at IS NOT NULL
 		FROM categories WHERE ledger_id=?`
 	args := []any{ledgerID}
 	if kind != "" {
@@ -255,7 +256,7 @@ func (s *Service) ListCategories(ledgerID, kind string) ([]Category, error) {
 	for rows.Next() {
 		var c Category
 		var seed, archived int
-		if err := rows.Scan(&c.ID, &c.ParentID, &c.Kind, &c.Name, &c.Sort, &seed, &archived); err != nil {
+		if err := rows.Scan(&c.ID, &c.ParentID, &c.Kind, &c.Name, &c.Icon, &c.Sort, &seed, &archived); err != nil {
 			return nil, err
 		}
 		c.Seed = seed == 1
@@ -363,6 +364,9 @@ type PostInput struct {
 	Merchant      string
 	Channel       string
 	OperationID   string
+	// RecurrenceInstanceID 关联周期实例：手工/模板记账确认本期事项，
+	// 同事务累计已关联金额，部分付款正确扣剩余计划。
+	RecurrenceInstanceID string
 }
 
 // PostResult is the outcome of a posting (or its idempotent replay).
@@ -447,12 +451,22 @@ func (s *Service) postInTx(tx *sql.Tx, in PostInput) error {
 	if in.ToAccountID != "" {
 		toAcct = in.ToAccountID
 	}
+	var recInst any
+	if in.RecurrenceInstanceID != "" {
+		recInst = in.RecurrenceInstanceID
+	}
 	if _, err := tx.Exec(`INSERT INTO transactions
-		(id,ledger_id,type,status,business_date,date_precision,amount_cents,category_id,from_account_id,to_account_id,note,merchant,channel,created_by,operation_id,content_hash)
-		VALUES(?,?,?,'posted',?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(id,ledger_id,type,status,business_date,date_precision,amount_cents,category_id,from_account_id,to_account_id,note,merchant,channel,recurrence_instance_id,created_by,operation_id,content_hash)
+		VALUES(?,?,?,'posted',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		txID, in.LedgerID, in.Type, in.BusinessDate, prec, in.AmountCents, cat, fromAcct, toAcct,
-		nullIfEmpty(in.Note), nullIfEmpty(in.Merchant), nullIfEmpty(in.Channel), in.ActorID, in.OperationID, in.contentHash()); err != nil {
+		nullIfEmpty(in.Note), nullIfEmpty(in.Merchant), nullIfEmpty(in.Channel), recInst, in.ActorID, in.OperationID, in.contentHash()); err != nil {
 		return err
+	}
+	// 周期实例确认（同事务）：已入账或部分入账扣除对应金额
+	if in.RecurrenceInstanceID != "" {
+		if err := confirmInstanceTx(tx, in.RecurrenceInstanceID, in.AmountCents); err != nil {
+			return err
+		}
 	}
 
 	type entry struct {
@@ -486,6 +500,9 @@ func (s *Service) postInTx(tx *sql.Tx, in PostInput) error {
 			switch sp.PartType {
 			case "receivable":
 				es = append(es, entry{"subj:asset:receivable", "", "debit", sp.AmountCents})
+			case "discount":
+				// 支付优惠：冲减费用（应付 10 实付 9 → 费用 10 - 优惠 1）
+				es = append(es, entry{kind + ":cat:" + sp.CategoryID, "", "credit", sp.AmountCents})
 			default: // expense / income 部分
 				es = append(es, entry{kind + ":cat:" + sp.CategoryID, "", "debit", sp.AmountCents})
 			}
@@ -581,16 +598,12 @@ func (s *Service) validate(in *PostInput) error {
 	case "expense", "income":
 		kind := in.Type
 		if len(in.Splits) > 0 {
-			var sum int64
+			var pos, disc int64
 			for _, sp := range in.Splits {
 				if sp.AmountCents <= 0 {
 					return ErrInvalidAmount
 				}
 				var err error
-				sum, err = money.CheckedAdd(sum, sp.AmountCents)
-				if err != nil {
-					return errf(400, "amount_overflow", "split total overflow")
-				}
 				switch sp.PartType {
 				case "expense", "income":
 					if sp.PartType != kind {
@@ -599,6 +612,7 @@ func (s *Service) validate(in *PostInput) error {
 					if err := s.requireCategory(in.LedgerID, sp.CategoryID, kind); err != nil {
 						return err
 					}
+					pos, err = money.CheckedAdd(pos, sp.AmountCents)
 				case "receivable":
 					if kind != "expense" {
 						return errf(400, "invalid_input", "receivable splits only on expenses")
@@ -606,12 +620,26 @@ func (s *Service) validate(in *PostInput) error {
 					if strings.TrimSpace(sp.Counterparty) == "" {
 						return errf(400, "invalid_input", "receivable split requires counterparty")
 					}
+					pos, err = money.CheckedAdd(pos, sp.AmountCents)
+				case "discount":
+					if kind != "expense" {
+						return errf(400, "invalid_input", "discount splits only on expenses")
+					}
+					if err := s.requireCategory(in.LedgerID, sp.CategoryID, kind); err != nil {
+						return err
+					}
+					disc, err = money.CheckedAdd(disc, sp.AmountCents)
 				default:
 					return errf(400, "invalid_input", "unknown split part type %q", sp.PartType)
 				}
+				if err != nil {
+					return errf(400, "amount_overflow", "split total overflow")
+				}
 			}
-			if sum != in.AmountCents {
-				return errf(400, "invalid_input", "splits must add up to the total amount")
+			// 拆分合计（费用 + 应收 - 优惠）必须等于实付总额
+			net, err := money.CheckedAdd(pos, -disc)
+			if err != nil || net != in.AmountCents {
+				return errf(400, "invalid_input", "splits (parts - discount) must add up to the total amount")
 			}
 		} else if err := s.requireCategory(in.LedgerID, in.CategoryID, kind); err != nil {
 			return err

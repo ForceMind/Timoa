@@ -19,6 +19,7 @@ export function TxDetailView({ id, accounts, onBack, onChanged }: {
   const [d, setD] = useState<TxDetail | null>(null)
   const [err, setErr] = useState('')
   const [action, setAction] = useState<string | null>(null)
+  const [copyErr, setCopyErr] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -32,6 +33,12 @@ export function TxDetailView({ id, accounts, onBack, onChanged }: {
   useEffect(() => { load() }, [load])
 
   const done = () => { setAction(null); load(); onChanged() }
+  const run2 = async (fn: () => Promise<unknown>) => {
+    setCopyErr('')
+    try { await fn(); onBack(); onChanged() } catch (e) {
+      setCopyErr(e instanceof ApiError ? e.message : '操作失败')
+    }
+  }
 
   if (err) return <div className="shell"><button className="btn-text" onClick={onBack}>‹ 返回</button><div className="alert">{err}</div></div>
   if (!d) return <div className="shell"><p className="empty">加载中…</p></div>
@@ -118,9 +125,13 @@ export function TxDetailView({ id, accounts, onBack, onChanged }: {
             {outstanding && <ActionBtn label="登记回款" onClick={() => setAction('settle')} />}
             {outstanding && <ActionBtn label="核销" onClick={() => setAction('writeoff')} />}
             {isPlainExpense && <ActionBtn label="转为待报销" onClick={() => setAction('reclass')} />}
+            {(d.type === 'expense' || d.type === 'income' || d.type === 'transfer') && (
+              <ActionBtn label="复制" onClick={() => run2(async () => { await api.copyTx(d.id) })} />
+            )}
             {!d.reversed && <ActionBtn label="更正" onClick={() => setAction('correct')} />}
             {!d.reversed && <ActionBtn label="作废" onClick={() => setAction('void')} danger />}
           </div>
+          {copyErr && <div className="alert">{copyErr}</div>}
         </div>
       )}
 

@@ -56,6 +56,28 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 
 	mux.Handle("GET /api/v1/receivables", s.requireAuth(http.HandlerFunc(s.receivables)))
 
+	mux.Handle("POST /api/v1/money/lend", s.requireAuth(http.HandlerFunc(s.lend)))
+	mux.Handle("POST /api/v1/money/borrow", s.requireAuth(http.HandlerFunc(s.borrow)))
+	mux.Handle("POST /api/v1/money/repay", s.requireAuth(http.HandlerFunc(s.repay)))
+	mux.Handle("POST /api/v1/money/loan-repay", s.requireAuth(http.HandlerFunc(s.loanRepay)))
+	mux.Handle("POST /api/v1/money/redeem", s.requireAuth(http.HandlerFunc(s.redeem)))
+	mux.Handle("POST /api/v1/transactions/{id}/copy", s.requireAuth(http.HandlerFunc(s.copyTx)))
+
+	mux.Handle("GET /api/v1/templates", s.requireAuth(http.HandlerFunc(s.listTemplates)))
+	mux.Handle("POST /api/v1/templates/{id}/pin", s.requireAuth(http.HandlerFunc(s.pinTemplate)))
+	mux.Handle("POST /api/v1/templates/{id}/enable", s.requireAuth(http.HandlerFunc(s.enableTemplate)))
+	mux.Handle("GET /api/v1/tags", s.requireAuth(http.HandlerFunc(s.listTags)))
+	mux.Handle("POST /api/v1/tags", s.requireAuth(http.HandlerFunc(s.createTag)))
+	mux.Handle("GET /api/v1/search", s.requireAuth(http.HandlerFunc(s.searchTx)))
+
+	mux.Handle("GET /api/v1/recurrence/rules", s.requireAuth(http.HandlerFunc(s.listRules)))
+	mux.Handle("POST /api/v1/recurrence/rules", s.requireAuth(http.HandlerFunc(s.createRule)))
+	mux.Handle("POST /api/v1/recurrence/rules/{id}/enable", s.requireAuth(http.HandlerFunc(s.enableRule)))
+	mux.Handle("GET /api/v1/recurrence/pending", s.requireAuth(http.HandlerFunc(s.pendingInstances)))
+	mux.Handle("POST /api/v1/recurrence/instances/{id}/skip", s.requireAuth(http.HandlerFunc(s.skipInstance)))
+	mux.Handle("POST /api/v1/recurrence/instances/{id}/postpone", s.requireAuth(http.HandlerFunc(s.postponeInstance)))
+	mux.Handle("GET /api/v1/recommendations", s.requireAuth(http.HandlerFunc(s.recommendations)))
+
 	mux.Handle("GET /api/v1/summary", s.requireAuth(http.HandlerFunc(s.summary)))
 	mux.Handle("GET /api/v1/stats/daily", s.requireAuth(http.HandlerFunc(s.statsDaily)))
 	mux.Handle("GET /api/v1/stats/overview", s.requireAuth(http.HandlerFunc(s.statsOverview)))
@@ -383,6 +405,7 @@ func (s *server) postTransaction(w http.ResponseWriter, r *http.Request) {
 		Merchant      string `json:"merchant"`
 		Channel       string `json:"channel"`
 		OperationID   string `json:"operation_id"`
+		RecurrenceInstanceID string `json:"recurrence_instance_id"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, err)
@@ -423,6 +446,7 @@ func (s *server) postTransaction(w http.ResponseWriter, r *http.Request) {
 		Merchant:      body.Merchant,
 		Channel:       body.Channel,
 		OperationID:   body.OperationID,
+		RecurrenceInstanceID: body.RecurrenceInstanceID,
 	})
 	if err != nil {
 		writeError(w, err)
