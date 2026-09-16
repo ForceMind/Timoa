@@ -43,6 +43,8 @@ export interface Account {
   balance_confirmed: boolean
   balance_unconfirmed: boolean
   archived: boolean
+  parent_id?: string
+  sub_kind?: 'current' | 'deposit' | 'investment'
 }
 
 export interface Category {
@@ -86,6 +88,8 @@ export const api = {
   accounts: () => req<{ accounts: Account[] }>('/api/v1/accounts'),
   createAccount: (b: { name: string; type: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),
+  createSubAccount: (parentID: string, b: { name: string; sub_kind: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
+    req<Account>(`/api/v1/accounts/${parentID}/sub`, { method: 'POST', body: JSON.stringify(b) }),
   categories: (kind: 'expense' | 'income') => req<{ categories: Category[] }>(`/api/v1/categories?kind=${kind}`),
   transactions: (limit = 30) => req<{ transactions: Tx[] }>(`/api/v1/transactions?limit=${limit}`),
   post: (b: Record<string, unknown>) =>

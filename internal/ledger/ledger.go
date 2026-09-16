@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +76,8 @@ type Account struct {
 	Name               string `json:"name"`
 	Type               string `json:"type"`
 	HolderUserID       string `json:"holder_user_id,omitempty"`
+	ParentID           string `json:"parent_id,omitempty"`  // 子账户：父账户（仅资产类、一级）
+	SubKind            string `json:"sub_kind,omitempty"`   // 子账户：current/deposit/investment
 	OpeningBalance     string `json:"opening_balance_cents"`
 	OpeningDate        string `json:"opening_date,omitempty"`
 	BalanceConfirmed   bool   `json:"balance_confirmed"`
@@ -139,6 +142,75 @@ func (s *Service) CreateAccount(ledgerID, actorID, name, typ string, holderUserI
 	return s.GetAccount(ledgerID, acctID)
 }
 
+// CreateSubAccount 创建二类子账户（活期/定期/理财）。
+// 约束：父账户必须存在、同账本、资产类、未归档、且自身不是子账户（仅一级）。
+// 子账户独立建 subject，余额独立计算；父账户汇总在 listAccounts 完成。
+func (s *Service) CreateSubAccount(ledgerID, actorID, parentID, name, subKind string, openingCents int64, openingDate *string, confirmed bool) (*Account, error) {
+	if name == "" {
+		return nil, errf(400, "invalid_input", "account name required")
+	}
+	if subKind != "current" && subKind != "deposit" && subKind != "investment" {
+		return nil, errf(400, "invalid_input", "sub_kind must be current/deposit/investment")
+	}
+	if openingCents > money.MaxCents || openingCents < -money.MaxCents {
+		return nil, ErrInvalidAmount
+	}
+
+	s.wm.Lock()
+	defer s.wm.Unlock()
+
+	// 校验父账户：同账本、资产类、未归档、非子账户
+	var pKind, pType, pParent string
+	var pArchived bool
+	err := s.db.QueryRow(`SELECT s.kind, a.type, COALESCE(a.parent_id,''), a.archived_at IS NOT NULL
+		FROM accounts a JOIN subjects s ON s.id=a.subject_id
+		WHERE a.id=? AND a.ledger_id=?`, parentID, ledgerID).Scan(&pKind, &pType, &pParent, &pArchived)
+	if err != nil {
+		return nil, errf(400, "invalid_input", "parent account not found")
+	}
+	if pKind != "asset" {
+		return nil, errf(400, "invalid_input", "sub-accounts only under asset accounts")
+	}
+	if pParent != "" {
+		return nil, errf(400, "invalid_input", "nested sub-accounts not allowed")
+	}
+	if pArchived {
+		return nil, errf(400, "invalid_input", "parent account archived")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	acctID := ids.New()
+	subID := ids.New()
+	// sub_kind 编码进 subject.name 前缀（accounts 表无该列，避免再加迁移）
+	subName := map[string]string{"current": "[活期]", "deposit": "[定期]", "investment": "[理财]"}[subKind] + name
+	if _, err := tx.Exec(`INSERT INTO subjects(id,ledger_id,kind,code,name) VALUES(?,?,?,?,?)`,
+		subID, ledgerID, "asset", subjectCode("asset:acct:", acctID), subName); err != nil {
+		return nil, err
+	}
+	var od any
+	if openingDate != nil {
+		od = *openingDate
+	}
+	if _, err := tx.Exec(`INSERT INTO accounts(id,ledger_id,subject_id,name,type,parent_id,opening_balance_cents,opening_date,balance_confirmed)
+		VALUES(?,?,?,?,?,?,?,?,?)`,
+		acctID, ledgerID, subID, subName, pType, parentID, openingCents, od, boolToInt(confirmed)); err != nil {
+		return nil, err
+	}
+	if err := audit(tx, ledgerID, actorID, "account.create_sub", "account", acctID,
+		map[string]any{"name": name, "parent_id": parentID, "sub_kind": subKind}); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.GetAccount(ledgerID, acctID)
+}
+
 // ArchiveAccount marks an account archived. Accounts with transactions can
 // only be archived, never deleted.
 func (s *Service) ArchiveAccount(ledgerID, actorID, accountID string) error {
@@ -176,6 +248,7 @@ func (s *Service) ListAccounts(ledgerID string) ([]Account, error) {
 func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 	q := `SELECT a.id,a.ledger_id,a.name,a.type,COALESCE(a.holder_user_id,''),a.opening_balance_cents,
 		COALESCE(a.opening_date,''),a.balance_confirmed,a.include_in_funds,a.archived_at IS NOT NULL,s.kind,
+		COALESCE(a.parent_id,''),
 		COALESCE((
 			SELECT SUM(CASE WHEN e.direction='debit' THEN e.amount_cents ELSE -e.amount_cents END)
 			FROM entries e JOIN transactions t ON t.id=e.tx_id
@@ -203,13 +276,26 @@ func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 		var kind string
 		var net int64
 		if err := rows.Scan(&a.ID, &a.LedgerID, &a.Name, &a.Type, &a.HolderUserID, &opening,
-			&a.OpeningDate, &confirmed, &include, &archived, &kind, &net); err != nil {
+			&a.OpeningDate, &confirmed, &include, &archived, &kind, &a.ParentID, &net); err != nil {
 			return nil, err
 		}
 		a.OpeningBalance = fmt.Sprintf("%d", opening)
 		a.BalanceConfirmed = confirmed == 1
 		a.IncludeInFunds = include == 1
 		a.Archived = archived == 1
+		// 子账户：从 subject.name 前缀解析 sub_kind（活期/定期/理财）
+		if a.ParentID != "" {
+			if strings.HasPrefix(a.Name, "[活期]") {
+				a.SubKind = "current"
+				a.Name = strings.TrimPrefix(a.Name, "[活期]")
+			} else if strings.HasPrefix(a.Name, "[定期]") {
+				a.SubKind = "deposit"
+				a.Name = strings.TrimPrefix(a.Name, "[定期]")
+			} else if strings.HasPrefix(a.Name, "[理财]") {
+				a.SubKind = "investment"
+				a.Name = strings.TrimPrefix(a.Name, "[理财]")
+			}
+		}
 		bal := opening + net
 		if kind == "liability" {
 			// Debt outstanding; negative means overpayment (e.g. credit
@@ -220,7 +306,30 @@ func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 		a.BalanceUnconfirmed = !a.BalanceConfirmed
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 子账户汇总：父账户 Balance 累加各子账户余额（资产类、仅一级）。
+	if onlyID == "" {
+		byID := make(map[string]*Account, len(out))
+		for i := range out {
+			byID[out[i].ID] = &out[i]
+		}
+		// 先清零父账户自身余额再累加（父余额 = 自身 + 各子账户）
+		// 注意：父账户自身余额保持不变，汇总值通过 BalanceWithSubs 给出？
+		// 需求是父账户汇总展示——这里把子账户余额加进父账户 Balance，
+		// 子账户自身余额不变，便于列表直接展示层级。
+		for i := range out {
+			if out[i].ParentID != "" {
+				if p, ok := byID[out[i].ParentID]; ok {
+					pBal, _ := strconv.ParseInt(p.Balance, 10, 64)
+					cBal, _ := strconv.ParseInt(out[i].Balance, 10, 64)
+					p.Balance = fmt.Sprintf("%d", pBal+cBal)
+				}
+			}
+		}
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

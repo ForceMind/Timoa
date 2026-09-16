@@ -40,6 +40,7 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("GET /api/v1/accounts", s.requireAuth(http.HandlerFunc(s.listAccounts)))
 	mux.Handle("POST /api/v1/accounts", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/archive", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.archiveAccount))))
+	mux.Handle("POST /api/v1/accounts/{id}/sub", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createSubAccount))))
 
 	mux.Handle("GET /api/v1/categories", s.requireAuth(http.HandlerFunc(s.listCategories)))
 	mux.Handle("POST /api/v1/categories", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createCategory))))
@@ -366,6 +367,45 @@ func (s *server) archiveAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// createSubAccount：在资产类账户下创建二类子账户（活期/定期/理财）。
+func (s *server) createSubAccount(w http.ResponseWriter, r *http.Request) {
+	m := s.mustMembership(w, r)
+	if m == nil {
+		return
+	}
+	sess := auth.SessionFrom(r.Context())
+	var body struct {
+		Name             string `json:"name"`
+		SubKind          string `json:"sub_kind"` // current/deposit/investment
+		OpeningYuan      string `json:"opening_balance"`
+		OpeningDate      string `json:"opening_date"`
+		BalanceConfirmed bool   `json:"balance_confirmed"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, err)
+		return
+	}
+	var opening int64
+	if strings.TrimSpace(body.OpeningYuan) != "" {
+		c, err := money.ParseYuan(body.OpeningYuan)
+		if err != nil {
+			writeErr(w, 400, "invalid_amount", "opening balance: "+err.Error())
+			return
+		}
+		opening = c
+	}
+	var od *string
+	if body.OpeningDate != "" {
+		od = &body.OpeningDate
+	}
+	acct, err := s.ledger.CreateSubAccount(m.ledgerID, sess.UserID, r.PathValue("id"), body.Name, body.SubKind, opening, od, body.BalanceConfirmed)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, acct)
 }
 
 func (s *server) listCategories(w http.ResponseWriter, r *http.Request) {

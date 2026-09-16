@@ -460,6 +460,24 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   // PWA 安装引导：事件到来/安装完成后刷新状态（beforeinstallprompt 由 main.tsx 捕获）。
   const [installSt, setInstallSt] = useState<InstallState>(installState())
   useEffect(() => subscribeInstall(() => setInstallSt(installState())), [])
+  // 子账户创建表单
+  const [subForm, setSubForm] = useState('')
+  const [subKind, setSubKind] = useState<'current' | 'deposit' | 'investment'>('current')
+  const [subName, setSubName] = useState('')
+  const [subOpening, setSubOpening] = useState('')
+  async function addSub(parentID: string) {
+    if (!subName.trim()) return
+    try {
+      await api.createSubAccount(parentID, {
+        name: subName.trim(), sub_kind: subKind,
+        opening_balance: subOpening.trim() || undefined, balance_confirmed: true,
+      })
+      setSubForm(''); setSubName(''); setSubOpening('')
+      onChanged()
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : '创建失败')
+    }
+  }
 
   const statusText: Record<string, string> = {
     disabled: '离线缓存未启用（共享设备建议保持关闭）',
@@ -475,14 +493,52 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
       <div className="panel">
         <h2>资金账户 <span className="more">按已录入记录计算</span></h2>
-        {accounts.map((a) => (
-          <div className="tx" key={a.id}>
-            <div className="icon" style={{ background: 'var(--primary-soft)' }}>💳</div>
-            <div className="main">
-              <div className="title">{a.name}</div>
-              <div className="meta">{ACCOUNT_TYPES[a.type] ?? a.type}{a.balance_unconfirmed ? ' · 余额未确认' : ''}</div>
+        {accounts.filter((a) => !a.parent_id).map((a) => (
+          <div key={a.id}>
+            <div className="tx">
+              <div className="icon" style={{ background: 'var(--primary-soft)' }}>💳</div>
+              <div className="main">
+                <div className="title">{a.name}</div>
+                <div className="meta">{ACCOUNT_TYPES[a.type] ?? a.type}{a.balance_unconfirmed ? ' · 余额未确认' : ''}</div>
+              </div>
+              <div className="amt">¥{formatCents(a.balance_cents)}</div>
+              {me.role === 'admin' && !a.archived && !['credit_card', 'huabei', 'loan_liability'].includes(a.type) && (
+                <button className="btn-text" style={{ fontSize: '0.8rem' }}
+                  onClick={() => setSubForm(subForm === a.id ? '' : a.id)}>＋子账户</button>
+              )}
             </div>
-            <div className="amt">¥{formatCents(a.balance_cents)}</div>
+            {subForm === a.id && (
+              <div className="tx" style={{ paddingLeft: 32 }}>
+                <div className="main">
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                    {([['current', '活期'], ['deposit', '定期'], ['investment', '理财']] as const).map(([k, v]) => (
+                      <button key={k} className={`chip${subKind === k ? ' on' : ''}`} style={{ minHeight: 36, padding: '4px 12px' }}
+                        onClick={() => setSubKind(k)}>{v}</button>
+                    ))}
+                  </div>
+                  <input placeholder="名称（如：一年定期）" value={subName} onChange={(e) => setSubName(e.target.value)}
+                    style={{ width: '100%', minHeight: 40, border: '1px solid var(--line)', borderRadius: 10, padding: '0 10px', fontSize: '0.95rem', background: 'var(--field-bg)', color: 'var(--ink)', marginBottom: 6 }} />
+                  <input placeholder="期初余额（元，可空）" inputMode="decimal" value={subOpening} onChange={(e) => setSubOpening(e.target.value)}
+                    style={{ width: '100%', minHeight: 40, border: '1px solid var(--line)', borderRadius: 10, padding: '0 10px', fontSize: '0.95rem', background: 'var(--field-bg)', color: 'var(--ink)', marginBottom: 6 }} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn" style={{ minHeight: 40, fontSize: '0.95rem' }} onClick={() => void addSub(a.id)}>创建</button>
+                    <button className="btn-text" onClick={() => setSubForm('')}>取消</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {accounts.filter((s) => s.parent_id === a.id).map((s) => (
+              <div className="tx" key={s.id} style={{ paddingLeft: 32 }}>
+                <div className="icon" style={{ background: 'var(--primary-soft)', fontSize: '0.8rem' }}>
+                  {s.sub_kind === 'current' ? '活' : s.sub_kind === 'deposit' ? '定' : '理'}
+                </div>
+                <div className="main">
+                  <div className="title">{s.name}</div>
+                  <div className="meta">{s.sub_kind === 'current' ? '活期' : s.sub_kind === 'deposit' ? '定期' : '理财'}{s.balance_unconfirmed ? ' · 余额未确认' : ''}</div>
+                </div>
+                <div className="amt">¥{formatCents(s.balance_cents)}</div>
+              </div>
+            ))}
           </div>
         ))}
         {accounts.length === 0 && <div className="empty">还没有账户。</div>}
