@@ -36,6 +36,7 @@ jobs:
 
       - name: 嵌入前端产物
         run: |
+          mkdir -p internal/webdist/dist
           find internal/webdist/dist -mindepth 1 -delete
           cp -r web/dist/* internal/webdist/dist/
 
