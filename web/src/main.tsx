@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { sync } from './sync'
+import { initTheme } from './theme'
+
+// 外观：应用已存的主题/字号偏好（index.html 内联脚本已防首屏闪烁）。
+initTheme()
 
 // 全局错误兜底：渲染期异常显示出来而不是白屏。
 window.addEventListener('error', (e) => {

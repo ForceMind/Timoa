@@ -3,6 +3,7 @@ import { api, ApiError, type AssetsOverview, type BudgetStatus, type Category, t
 import { Chart } from './chart'
 import { CalendarPanel, ForecastPanel } from './forecast'
 import { formatCents, parseYuan } from './money'
+import { isDarkNow, subscribeTheme } from './theme'
 
 // 统计（一级页，页内切换）：概览 / 趋势 / 分类 / 预算 / 资产 / 目标 / 往来。
 // 区间支持本月、上月、本季度、本年、自定义；环比为等长上一区间，
@@ -65,6 +66,13 @@ export function StatsView({ expenseCats }: { expenseCats: Category[] }) {
   const [goals, setGoals] = useState<SavingsGoal[]>([])
   const [recv, setRecv] = useState<Receivable[]>([])
   const [err, setErr] = useState('')
+  // 主题变化时重建图表配色（ECharts canvas 不随 CSS 变量自动更新）。
+  const [themeTick, setThemeTick] = useState(0)
+  useEffect(() => subscribeTheme(() => setThemeTick((t) => t + 1)), [])
+  const dark = isDarkNow()
+  const chartText = dark ? '#8fa096' : '#7a8a82'
+  const chartAxis = dark ? '#2a3830' : '#e8eee9'
+  const chartGrid = dark ? '#233129' : '#f0f4f1'
 
   const monthKey = range.from.slice(0, 7)
 
@@ -94,26 +102,27 @@ export function StatsView({ expenseCats }: { expenseCats: Category[] }) {
 
   const trendOption = useMemo(() => ({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['支出', '收入'], bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11 } },
+    legend: { data: ['支出', '收入'], bottom: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: chartText } },
     grid: { left: 8, right: 8, top: 16, bottom: 28, containLabel: true },
-    xAxis: { type: 'category', data: days.map((d) => d.date.slice(5)), axisLabel: { fontSize: 10 }, axisLine: { lineStyle: { color: '#e8eee9' } } },
-    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f4f1' } }, axisLabel: { fontSize: 10 } },
+    xAxis: { type: 'category', data: days.map((d) => d.date.slice(5)), axisLabel: { fontSize: 10, color: chartText }, axisLine: { lineStyle: { color: chartAxis } } },
+    yAxis: { type: 'value', splitLine: { lineStyle: { color: chartGrid } }, axisLabel: { fontSize: 10, color: chartText } },
     series: [
       { name: '支出', type: 'bar', data: days.map((d) => (Number(d.expense_cents) / 100).toFixed(2)), itemStyle: { color: '#2fa87c', borderRadius: [3, 3, 0, 0] } },
       { name: '收入', type: 'line', smooth: true, data: days.map((d) => (Number(d.income_cents) / 100).toFixed(2)), itemStyle: { color: '#8b7fd4' }, lineStyle: { width: 2 } },
     ],
-  }), [days])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [days, themeTick])
 
   const pieNets = nets.filter((n) => BigInt(n.net_cents) > 0n)
   const pieOption = useMemo(() => ({
     tooltip: { trigger: 'item', valueFormatter: (v: number) => `¥${v.toFixed(2)}` },
-    legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10 }, type: 'scroll' },
+    legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 10, color: chartText }, type: 'scroll' },
     series: [{
       type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'],
       label: { show: false },
       data: pieNets.map((n) => ({ name: n.category_name, value: Number(n.net_cents) / 100 })),
     }],
-  }), [nets]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [nets, themeTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ovRows: [string, keyof Overview][] = [
     ['原收入', 'gross_income_cents'], ['收入退回', 'income_returns_cents'], ['净收入', 'net_income_cents'],

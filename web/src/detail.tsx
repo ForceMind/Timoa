@@ -152,7 +152,7 @@ export function TxDetailView({ id, accounts, onBack, onChanged }: {
 function ActionBtn({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {
   return (
     <button className="chip" onClick={onClick}>
-      <span className="ic" style={{ background: danger ? '#fdecea' : 'var(--primary-soft)' }}>{danger ? '⚠️' : '›'}</span>
+      <span className="ic" style={{ background: danger ? 'var(--danger-soft)' : 'var(--primary-soft)' }}>{danger ? '⚠️' : '›'}</span>
       <span>{label}</span>
     </button>
   )

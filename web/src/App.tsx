@@ -9,6 +9,7 @@ import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 import { StatsView } from './stats'
 import { sync, type SyncState } from './sync'
 import { exportOutbox } from './db'
+import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
 
@@ -124,17 +125,20 @@ function useMonth() {
   }, [])
 }
 
-// 分类 → 图标与底色（本地素材，无外部依赖）
-const CAT_STYLE: Record<string, { icon: string; bg: string }> = {
-  '餐饮': { icon: '🍜', bg: '#fdeee0' },
-  '交通': { icon: '🚌', bg: '#e3effc' },
-  '购物': { icon: '🛒', bg: '#f3e8fd' },
-  '居住': { icon: '🏠', bg: '#e3f4ec' },
-  '其他支出': { icon: '📦', bg: '#f0f1f3' },
-  '工资薪酬': { icon: '💼', bg: '#e3f4ec' },
-  '其他收入': { icon: '🧧', bg: '#fdeee0' },
+// 分类 → 图标与底色（本地素材，无外部依赖）；深浅两套底色按当前主题取值。
+const CAT_STYLE: Record<string, { icon: string; bg: string; bgDark: string }> = {
+  '餐饮': { icon: '🍜', bg: '#fdeee0', bgDark: '#3d2f1e' },
+  '交通': { icon: '🚌', bg: '#e3effc', bgDark: '#1e3242' },
+  '购物': { icon: '🛒', bg: '#f3e8fd', bgDark: '#33244a' },
+  '居住': { icon: '🏠', bg: '#e3f4ec', bgDark: '#1f3a2e' },
+  '其他支出': { icon: '📦', bg: '#f0f1f3', bgDark: '#2a322d' },
+  '工资薪酬': { icon: '💼', bg: '#e3f4ec', bgDark: '#1f3a2e' },
+  '其他收入': { icon: '🧧', bg: '#fdeee0', bgDark: '#3d2f1e' },
 }
-const catStyle = (name?: string) => (name && CAT_STYLE[name]) || { icon: '💴', bg: '#f0f1f3' }
+const catStyle = (name?: string) => {
+  const st = (name && CAT_STYLE[name]) || { icon: '💴', bg: '#f0f1f3', bgDark: '#2a322d' }
+  return { icon: st.icon, bg: isDarkNow() ? st.bgDark : st.bg }
+}
 
 function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>('home')
@@ -445,8 +449,13 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings'>('')
   const [syncState, setSyncState] = useState<SyncState>({ status: 'disabled', pending: 0 })
   const [offlineOn, setOfflineOn] = useState(false)
+  const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref())
+  const [fontPref, setFontPrefState] = useState<FontSizePref>(getFontSizePref())
   useEffect(() => sync.subscribe(setSyncState), [])
   useEffect(() => { setOfflineOn(syncState.status !== 'disabled') }, [syncState.status])
+  // 主题变化时强制重渲染（分类底色等按当前主题取值的渲染随之刷新）。
+  const [, setThemeTick] = useState(0)
+  useEffect(() => subscribeTheme(() => setThemeTick((t) => t + 1)), [])
 
   const statusText: Record<string, string> = {
     disabled: '离线缓存未启用（共享设备建议保持关闭）',
@@ -500,6 +509,31 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       {manage === 'data' && <DataPanel accounts={accounts} expenseCats={expenseCats} onChanged={onChanged} />}
       {manage === 'settings' && (
         <div className="panel">
+          <h2>外观</h2>
+          <div className="tx">
+            <div className="main">
+              <div className="title">主题</div>
+              <div className="meta">跟随系统时随设备深浅色自动切换</div>
+            </div>
+          </div>
+          <div className="seg">
+            {([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']] as [ThemePref, string][]).map(([k, v]) => (
+              <button key={k} className={themePref === k ? 'on' : ''}
+                onClick={() => { setThemePref(k); setThemePrefState(k) }}>{v}</button>
+            ))}
+          </div>
+          <div className="tx">
+            <div className="main">
+              <div className="title">字号</div>
+              <div className="meta">大字模式适合长辈或远距离查看</div>
+            </div>
+          </div>
+          <div className="seg">
+            {([['standard', '标准'], ['large', '大字']] as [FontSizePref, string][]).map(([k, v]) => (
+              <button key={k} className={fontPref === k ? 'on' : ''}
+                onClick={() => { setFontSizePref(k); setFontPrefState(k) }}>{v}</button>
+            ))}
+          </div>
           <h2>离线与同步</h2>
           <div className="tx">
             <div className="main">

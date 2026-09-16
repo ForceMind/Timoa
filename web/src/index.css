@@ -13,8 +13,39 @@
   --orange: #f2a35c;
   --yellow: #f2c94c;
   --blue: #64a8e8;
+  --field-bg: #ffffff;
+  --chip-on-bg: #ffffff;
+  --danger-soft: #fdecea;
+  --danger-ink: #8c2f28;
+  --chart-grid: #f0f4f1;
+  --chart-axis: #e8eee9;
+  --chart-text: #7a8a82;
   font-size: 16px;
 }
+
+/* 深色主题：由 <html data-theme="dark"> 切换（见 src/theme.ts）。 */
+:root[data-theme='dark'] {
+  --bg: #0f1713;
+  --card: #1a2620;
+  --ink: #e8f0ea;
+  --muted: #8fa096;
+  --primary: #3cb98b;
+  --primary-dark: #63c9a3;
+  --primary-soft: #1f3a2e;
+  --expense: #e8706a;
+  --income: #3cb98b;
+  --line: #2a3830;
+  --field-bg: #14201a;
+  --chip-on-bg: #14201a;
+  --danger-soft: #3d2320;
+  --danger-ink: #e8928c;
+  --chart-grid: #233129;
+  --chart-axis: #2a3830;
+  --chart-text: #8fa096;
+}
+
+/* 大字模式：根字号放大，全站 rem 随之放大。 */
+:root[data-fontsize='large'] { font-size: 19px; }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
@@ -70,11 +101,11 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .chip { display: flex; flex-direction: column; align-items: center; gap: 5px; border: none; background: none; cursor: pointer; min-height: 44px; padding: 4px 0; }
 .chip .ic { width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; background: var(--primary-soft); }
 .chip span { font-size: 0.75rem; color: var(--ink); }
-.chip.on .ic { outline: 2px solid var(--primary); background: #fff; }
+.chip.on .ic { outline: 2px solid var(--primary); background: var(--chip-on-bg); }
 
 .field { margin-bottom: 14px; }
 .field label { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 5px; }
-.field input, .field select { width: 100%; min-height: 46px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; font-size: 1rem; background: #fff; }
+.field input, .field select { width: 100%; min-height: 46px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; font-size: 1rem; background: var(--field-bg); color: var(--ink); }
 
 .btn { width: 100%; min-height: 50px; border: none; border-radius: 14px; background: var(--primary); color: #fff; font-size: 1.05rem; font-weight: 600; cursor: pointer; }
 .btn:active { background: var(--primary-dark); }
@@ -92,7 +123,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .tabbar .fab-wrap span { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
 
 .empty { color: var(--muted); text-align: center; padding: 26px 0; font-size: 0.88rem; }
-.alert { background: #fdecea; color: #8c2f28; border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; }
+.alert { background: var(--danger-soft); color: var(--danger-ink); border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; }
 .notice { background: var(--primary-soft); color: var(--primary-dark); border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; }
 
 .login-wrap { max-width: 400px; margin: 12vh auto 0; padding: 0 16px; }
