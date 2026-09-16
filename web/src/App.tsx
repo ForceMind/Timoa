@@ -10,6 +10,7 @@ import { StatsView } from './stats'
 import { sync, type SyncState } from './sync'
 import { exportOutbox } from './db'
 import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
+import { installState, promptInstall, subscribeInstall, type InstallState } from './pwa'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
 
@@ -456,6 +457,9 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   // 主题变化时强制重渲染（分类底色等按当前主题取值的渲染随之刷新）。
   const [, setThemeTick] = useState(0)
   useEffect(() => subscribeTheme(() => setThemeTick((t) => t + 1)), [])
+  // PWA 安装引导：事件到来/安装完成后刷新状态（beforeinstallprompt 由 main.tsx 捕获）。
+  const [installSt, setInstallSt] = useState<InstallState>(installState())
+  useEffect(() => subscribeInstall(() => setInstallSt(installState())), [])
 
   const statusText: Record<string, string> = {
     disabled: '离线缓存未启用（共享设备建议保持关闭）',
@@ -533,6 +537,21 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
               <button key={k} className={fontPref === k ? 'on' : ''}
                 onClick={() => { setFontSizePref(k); setFontPrefState(k) }}>{v}</button>
             ))}
+          </div>
+          <h2>安装应用</h2>
+          <div className="tx">
+            <div className="main">
+              <div className="title">安装到主屏幕 / 桌面</div>
+              <div className="meta">
+                {installSt === 'installed' && '已作为应用安装，离线可打开'}
+                {installSt === 'promptable' && '安装后离线可用、启动更快'}
+                {installSt === 'ios' && 'Safari 打开分享菜单 → 添加到主屏幕'}
+                {installSt === 'unavailable' && '当前浏览器暂不支持安装（可用系统浏览器重试）'}
+              </div>
+            </div>
+            {installSt === 'promptable' && (
+              <button className="btn-text" onClick={() => { void promptInstall() }}>安装</button>
+            )}
           </div>
           <h2>离线与同步</h2>
           <div className="tx">
