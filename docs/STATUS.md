@@ -73,6 +73,19 @@
 
 - 上述 4 项均带 Go 单元测试随提交入库；提交历史见 `3fcac65`（分摊）、`359bb22`（子账户）、`228516a`（储值券效期）、`bc5e0d3`（便笺）。
 
+## 已实现（一键部署新增）
+
+- 一键安装脚本 `scripts/install.sh`：服务器上 `bash <(curl -Ls .../install.sh)` 一条命令完成安装——下载 Release 二进制（SHA256SUMS 校验防篡改）→ xiaozhang 系统用户 + `/var/lib/xiaozhang`（0700）→ systemd 最小权限单元开机自启 → 交互式管理员初始化（/dev/tty 兼容管道执行）→ 健康检查 → 打印访问地址。支持 `install [版本]` / `upgrade`（数据保留）/ `uninstall`（数据目录保留）。
+- Release 流水线 `.github/workflows/release.yml`：tag `v*` 触发，前端构建嵌入 → `go test ./...` → CGO_ENABLED=0 交叉编译 linux/amd64+arm64（`-X main.version` 注入）→ SHA256SUMS → GitHub Releases；服务器零依赖（无需 Go/Node/Docker）。
+- `version`/`--version` 子命令；文档：README 顶部一键安装入口、DEPLOYMENT.md 方式 A 一键脚本（Docker/源码顺延 B/C）。
+
+## 已验证（真实执行）
+
+- v1.0.0 流水线实跑成功（6m11s）：CI 全量测试通过，Release 发布 amd64（18.2MB）/ arm64（17.2MB）/ SHA256SUMS 三产物。
+- 修复：`.gitignore` 全局 `dist/` 规则排除 `internal/webdist/dist` 导致 CI 嵌入步骤目录不存在（工作流先 `mkdir -p`）。
+- 仓库已转 Public（Actions 免费不限量；转前确认 git 历史无 .env/密钥）。
+- 未验证（如实记录）：install.sh 尚未在真实服务器端到端执行；二进制未在真机启动验证。
+
 ## 已实现（阶段 5 新增）
 
 - 生图图标集：Timoa logo（时钟+嫩芽，192/512/maskable）+ 5 个导航图标（首页/流水/＋/统计/我的），替换全部文字符号图标；底部 + 号改为高对比绿色圆形生图按钮；水印清理与多尺寸处理。
@@ -94,6 +107,7 @@
 ## 未完成 / 下一步
 
 - 阶段 6 收尾：Docker 镜像构建验证（需有 Docker 的机器）、端到端回归。
+- install.sh 真实服务器端到端验证（首装/升级/卸载各跑一次）。
 - 多人开销配比、农历/法定工作日日历（docs/FEATURE_MAP）。
 - PWA 增强：iOS 真机验证（浏览器模拟不能冒充）。
 
