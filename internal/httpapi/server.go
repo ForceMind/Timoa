@@ -70,6 +70,11 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/tags", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createTag))))
 	mux.Handle("GET /api/v1/search", s.requireAuth(http.HandlerFunc(s.searchTx)))
 
+	mux.Handle("GET /api/v1/notes", s.requireAuth(http.HandlerFunc(s.listNotes)))
+	mux.Handle("POST /api/v1/notes", s.requireAuth(http.HandlerFunc(s.createNote)))
+	mux.Handle("POST /api/v1/notes/{id}", s.requireAuth(http.HandlerFunc(s.updateNote)))
+	mux.Handle("DELETE /api/v1/notes/{id}", s.requireAuth(http.HandlerFunc(s.deleteNote)))
+
 	mux.Handle("GET /api/v1/recurrence/rules", s.requireAuth(http.HandlerFunc(s.listRules)))
 	mux.Handle("POST /api/v1/recurrence/rules", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createRule))))
 	mux.Handle("POST /api/v1/recurrence/rules/{id}/enable", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.enableRule))))

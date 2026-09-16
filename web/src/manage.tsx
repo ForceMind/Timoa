@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type Category, type RecurrenceRule, type Template } from './api'
+import { api, ApiError, type Category, type Note, type RecurrenceRule, type Template } from './api'
 import { formatCents, parseYuan } from './money'
 
 // 我的 → 模板管理与周期管理：新增/启用/置顶均在同页完成（二级页面内
@@ -164,6 +164,83 @@ export function RulesPanel({ expenseCats, onChanged }: { expenseCats: Category[]
           <button className="btn-text" onClick={() => setShowForm(false)}>取消</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// NotesPanel：便笺（非账务内容，不影响统计；账本共享）。
+export function NotesPanel() {
+  const [notes, setNotes] = useState<Note[]>([])
+  const [text, setText] = useState('')
+  const [editID, setEditID] = useState('')
+  const [editText, setEditText] = useState('')
+  const [err, setErr] = useState('')
+
+  const load = () => api.notes().then((r) => setNotes(r.notes)).catch((e) => setErr(String(e)))
+  useEffect(() => { load() }, [])
+
+  async function add() {
+    setErr('')
+    if (!text.trim()) { setErr('请填写内容'); return }
+    try {
+      await api.createNote(text.trim())
+      setText('')
+      load()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : '保存失败')
+    }
+  }
+
+  async function saveEdit(n: Note) {
+    setErr('')
+    if (!editText.trim()) { setErr('请填写内容'); return }
+    try {
+      await api.updateNote(n.id, editText.trim(), n.pinned)
+      setEditID('')
+      load()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : '保存失败')
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>便笺 <span className="more">购物清单、提醒事项等，不影响账务统计</span></h2>
+      {err && <div className="alert">{err}</div>}
+      <div className="field">
+        <textarea rows={2} placeholder="记点什么…（全账本可见）" value={text} onChange={(e) => setText(e.target.value)} />
+      </div>
+      <button className="btn" onClick={add}>添加</button>
+      {notes.length === 0 && <div className="empty">还没有便笺。</div>}
+      {notes.map((n) => (
+        <div className="tx" key={n.id}>
+          <div className="main">
+            {editID === n.id ? (
+              <>
+                <textarea rows={2} value={editText} onChange={(e) => setEditText(e.target.value)} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button className="btn-text" onClick={() => saveEdit(n)}>保存</button>
+                  <button className="btn-text" onClick={() => setEditID('')}>取消</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="title">{n.pinned ? '📌 ' : ''}{n.content}</div>
+                <div className="meta">{n.updated_at.slice(0, 16).replace('T', ' ')}</div>
+              </>
+            )}
+          </div>
+          {editID !== n.id && (
+            <>
+              <button className="btn-text" onClick={() => { setEditID(n.id); setEditText(n.content) }}>编辑</button>
+              <button className="btn-text" onClick={async () => { await api.updateNote(n.id, n.content, !n.pinned); load() }}>
+                {n.pinned ? '取消置顶' : '置顶'}
+              </button>
+              <button className="btn-text" onClick={async () => { await api.deleteNote(n.id); load() }}>删除</button>
+            </>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

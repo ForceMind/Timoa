@@ -144,6 +144,19 @@ export const api = {
   repay: (b: Record<string, unknown>) => req('/api/v1/money/repay', { method: 'POST', body: JSON.stringify(b) }),
   loanRepay: (b: Record<string, unknown>) => req('/api/v1/money/loan-repay', { method: 'POST', body: JSON.stringify(b) }),
   redeem: (b: Record<string, unknown>) => req('/api/v1/money/redeem', { method: 'POST', body: JSON.stringify(b) }),
+  notes: () => req<{ notes: Note[] }>('/api/v1/notes'),
+  createNote: (content: string) => req<Note>('/api/v1/notes', { method: 'POST', body: JSON.stringify({ content }) }),
+  updateNote: (id: string, content: string, pinned: boolean) => req(`/api/v1/notes/${id}`, { method: 'POST', body: JSON.stringify({ content, pinned }) }),
+  deleteNote: (id: string) => req(`/api/v1/notes/${id}`, { method: 'DELETE' }),
+}
+
+export interface Note {
+  id: string
+  content: string
+  pinned: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
 }
 
 export interface Template {

@@ -3,7 +3,7 @@ import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySu
 import { brand } from './brand'
 import { DataPanel } from './data'
 import { TxDetailView } from './detail'
-import { RulesPanel, TemplatesPanel } from './manage'
+import { NotesPanel, RulesPanel, TemplatesPanel } from './manage'
 import { MembersPanel } from './members'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 import { StatsView } from './stats'
@@ -447,7 +447,7 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
-  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings'>('')
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings' | 'notes'>('')
   const [syncState, setSyncState] = useState<SyncState>({ status: 'disabled', pending: 0 })
   const [offlineOn, setOfflineOn] = useState(false)
   const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref())
@@ -489,7 +489,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       </div>
       <div className="panel">
         <h2>管理</h2>
-        <div className="chips" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
           <button className="chip" onClick={() => setManage(manage === 'members' ? '' : 'members')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>👪</span><span>成员</span>
           </button>
@@ -502,6 +502,9 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
           <button className="chip" onClick={() => setManage(manage === 'data' ? '' : 'data')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>📦</span><span>数据</span>
           </button>
+          <button className="chip" onClick={() => setManage(manage === 'notes' ? '' : 'notes')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>📝</span><span>便笺</span>
+          </button>
           <button className="chip" onClick={() => setManage(manage === 'settings' ? '' : 'settings')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>⚙️</span><span>设置</span>
           </button>
@@ -511,6 +514,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
       {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}
       {manage === 'data' && <DataPanel accounts={accounts} expenseCats={expenseCats} onChanged={onChanged} />}
+      {manage === 'notes' && <NotesPanel />}
       {manage === 'settings' && (
         <div className="panel">
           <h2>外观</h2>

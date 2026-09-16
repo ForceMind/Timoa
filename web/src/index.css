@@ -106,6 +106,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .field { margin-bottom: 14px; }
 .field label { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 5px; }
 .field input, .field select { width: 100%; min-height: 46px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; font-size: 1rem; background: var(--field-bg); color: var(--ink); }
+.field textarea, .tx textarea { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 1rem; font-family: inherit; background: var(--field-bg); color: var(--ink); resize: vertical; }
 
 .btn { width: 100%; min-height: 50px; border: none; border-radius: 14px; background: var(--primary); color: #fff; font-size: 1.05rem; font-weight: 600; cursor: pointer; }
 .btn:active { background: var(--primary-dark); }
