@@ -116,7 +116,20 @@ export function RulesPanel({ expenseCats, onChanged }: { expenseCats: Category[]
               {r.fixed_amount_cents ? ` · ¥${formatCents(r.fixed_amount_cents)}` : ''}
             </div>
           </div>
-          <button className="btn-text" onClick={async () => { await api.enableRule(r.id, !r.enabled); load(); onChanged() }}>
+          <button className="btn-text" onClick={async () => {
+            setErr('')
+            try {
+              await api.enableRule(r.id, !r.enabled, r.version ?? 0)
+              load(); onChanged()
+            } catch (e) {
+              if (e instanceof ApiError && e.code === 'version_conflict') {
+                setErr(`「${r.name}」刚被其他成员修改过，已为你刷新，请重试`)
+                load()
+              } else {
+                setErr(e instanceof ApiError ? e.message : '操作失败')
+              }
+            }
+          }}>
             {r.enabled ? '停用' : '启用'}
           </button>
         </div>

@@ -193,7 +193,7 @@ func TestT28_SkipPostponeDisable(t *testing.T) {
 		t.Fatal("double skip accepted")
 	}
 	// 停用后不再生成
-	if err := e.svc.SetRuleEnabled(e.ledgerID, rule.ID, false); err != nil {
+	if err := e.svc.SetRuleEnabled(e.ledgerID, rule.ID, false, 0); err != nil {
 		t.Fatal(err)
 	}
 	scan(t, e, "2026-10-20")
@@ -201,6 +201,54 @@ func TestT28_SkipPostponeDisable(t *testing.T) {
 	e.db.QueryRow(`SELECT COUNT(1) FROM recurrence_instances WHERE rule_id=? AND period_key='2026-10'`, rule.ID).Scan(&cnt)
 	if cnt != 0 {
 		t.Fatalf("disabled rule still generating")
+	}
+}
+
+// TestT22_RuleVersionConflict：base_version 乐观并发——
+// 版本一致正常更新；版本落后返回 version_conflict 且不被覆盖；
+// base_version=0 兼容未做版本感知的旧调用。
+func TestT22_RuleVersionConflict(t *testing.T) {
+	e := newTestEnv(t)
+	rule, err := e.svc.CreateRule(e.ledgerID, ledger.RecurrenceRule{
+		Name: "房租", TxType: "expense", Frequency: "monthly", MonthDay: 1,
+		AnchorDate: "2026-01-01", StartDate: "2026-01-01", AmountPolicy: "manual",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 新建规则版本为 1（建表默认值，CreateRule 不回填结构体字段）
+	var ver int
+	e.db.QueryRow(`SELECT version FROM recurrence_rules WHERE id=?`, rule.ID).Scan(&ver)
+	if ver != 1 {
+		t.Fatalf("new rule version = %d, want 1", ver)
+	}
+	// 版本一致：v1 → v2
+	if err := e.svc.SetRuleEnabled(e.ledgerID, rule.ID, false, 1); err != nil {
+		t.Fatal(err)
+	}
+	// 用旧版本 v1 再改：冲突，不生效
+	err = e.svc.SetRuleEnabled(e.ledgerID, rule.ID, true, 1)
+	le, ok := err.(*ledger.Error)
+	if !ok || le.Code != "version_conflict" {
+		t.Fatalf("stale base_version: got %v, want version_conflict", err)
+	}
+	var enabled bool
+	e.db.QueryRow(`SELECT enabled, version FROM recurrence_rules WHERE id=?`, rule.ID).Scan(&enabled, &ver)
+	if enabled || ver != 2 {
+		t.Fatalf("conflict write slipped through: enabled=%v version=%d", enabled, ver)
+	}
+	// 当前版本 v2 重试成功
+	if err := e.svc.SetRuleEnabled(e.ledgerID, rule.ID, true, 2); err != nil {
+		t.Fatal(err)
+	}
+	// base_version=0：兼容路径，不校验
+	if err := e.svc.SetRuleEnabled(e.ledgerID, rule.ID, false, 0); err != nil {
+		t.Fatal(err)
+	}
+	// 不存在的规则
+	err = e.svc.SetRuleEnabled(e.ledgerID, "no-such-rule", false, 1)
+	if le, ok := err.(*ledger.Error); !ok || le.Code != "not_found" {
+		t.Fatalf("missing rule: got %v, want not_found", err)
 	}
 }
 

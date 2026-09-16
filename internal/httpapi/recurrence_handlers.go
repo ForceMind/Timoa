@@ -67,13 +67,14 @@ func (s *server) enableRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Enabled bool `json:"enabled"`
+		Enabled     bool `json:"enabled"`
+		BaseVersion int  `json:"base_version"` // T22 乐观并发：0 = 未做版本感知
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := s.ledger.SetRuleEnabled(m.ledgerID, r.PathValue("id"), body.Enabled); err != nil {
+	if err := s.ledger.SetRuleEnabled(m.ledgerID, r.PathValue("id"), body.Enabled, body.BaseVersion); err != nil {
 		writeError(w, err)
 		return
 	}

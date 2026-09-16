@@ -132,7 +132,7 @@ export const api = {
   enableTemplate: (id: string, enabled: boolean) => req(`/api/v1/templates/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
   rules: () => req<{ rules: RecurrenceRule[] }>('/api/v1/recurrence/rules'),
   createRule: (b: Record<string, unknown>) => req('/api/v1/recurrence/rules', { method: 'POST', body: JSON.stringify(b) }),
-  enableRule: (id: string, enabled: boolean) => req(`/api/v1/recurrence/rules/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled }) }),
+  enableRule: (id: string, enabled: boolean, baseVersion = 0) => req(`/api/v1/recurrence/rules/${id}/enable`, { method: 'POST', body: JSON.stringify({ enabled, base_version: baseVersion }) }),
   pending: () => req<{ instances: RecurrenceInstance[] }>('/api/v1/recurrence/pending'),
   skipInstance: (id: string) => req(`/api/v1/recurrence/instances/${id}/skip`, { method: 'POST' }),
   postponeInstance: (id: string, date: string) => req(`/api/v1/recurrence/instances/${id}/postpone`, { method: 'POST', body: JSON.stringify({ date }) }),
@@ -177,6 +177,7 @@ export interface RecurrenceRule {
   amount_policy: string
   fixed_amount_cents?: string
   enabled: boolean
+  version?: number
 }
 
 export interface RecurrenceInstance {

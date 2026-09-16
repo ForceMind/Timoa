@@ -135,8 +135,22 @@ func (s *Service) ListRules(ledgerID string) ([]RecurrenceRule, error) {
 	return out, rows.Err()
 }
 
-// SetRuleEnabled 停用规则（保留历史实例，不再生成新实例）。
-func (s *Service) SetRuleEnabled(ledgerID, ruleID string, enabled bool) error {
+// SetRuleEnabled 启用/停用周期规则（T22 乐观并发）：
+// baseVersion > 0 时要求客户端持有的版本与当前一致，否则返回
+// version_conflict（409，携带当前版本），不做 last-write-wins 静默覆盖；
+// baseVersion = 0 表示调用方未做版本感知（旧客户端兼容路径）。
+// 停用保留历史实例，不再生成新实例。
+func (s *Service) SetRuleEnabled(ledgerID, ruleID string, enabled bool, baseVersion int) error {
+	if baseVersion > 0 {
+		var cur int
+		err := s.db.QueryRow(`SELECT version FROM recurrence_rules WHERE id=? AND ledger_id=?`, ruleID, ledgerID).Scan(&cur)
+		if err != nil {
+			return ErrNotFound
+		}
+		if cur != baseVersion {
+			return errf(409, "version_conflict", "rule was changed by someone else (current version %d); refresh and retry", cur)
+		}
+	}
 	res, err := s.db.Exec(`UPDATE recurrence_rules SET enabled=?, version=version+1 WHERE id=? AND ledger_id=?`,
 		boolToInt(enabled), ruleID, ledgerID)
 	if err != nil {
