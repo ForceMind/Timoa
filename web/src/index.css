@@ -84,9 +84,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 /* 底部导航 */
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); display: flex; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); z-index: 10; }
 .tabbar button { flex: 1; border: none; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted); font-size: 0.68rem; cursor: pointer; min-height: 44px; padding: 4px 0; }
-.tabbar button .ti { font-size: 1.25rem; }
+.tabbar .ti { width: 26px; height: 26px; object-fit: contain; opacity: 0.55; filter: grayscale(0.4); }
 .tabbar button.on { color: var(--primary-dark); font-weight: 600; }
-.tabbar .fab { width: 52px; height: 52px; margin: -26px auto 0; border-radius: 50%; background: var(--primary); color: #fff; font-size: 1.7rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgb(47 168 124 / 40%); flex: none; }
+.tabbar button.on .ti { opacity: 1; filter: none; }
+.tabbar .fab-img { width: 54px; height: 54px; margin: -26px auto 0; filter: drop-shadow(0 4px 10px rgb(47 168 124 / 45%)); }
 .tabbar .fab-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; background: none; border: none; cursor: pointer; }
 .tabbar .fab-wrap span { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
 

@@ -111,6 +111,9 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/admin/backups/{name}/download", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminDownloadBackup))))
 	mux.Handle("GET /api/v1/admin/diagnostics", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.adminDiagnostics))))
 
+	mux.Handle("POST /api/v1/sync/push", s.requireAuth(http.HandlerFunc(s.syncPush)))
+	mux.Handle("GET /api/v1/sync/pull", s.requireAuth(http.HandlerFunc(s.syncPull)))
+
 	// 同源托管前端（生产）；/api 与 /healthz 已在上方优先匹配
 	mux.Handle("/", staticHandler())
 
@@ -564,7 +567,8 @@ func writeError(w http.ResponseWriter, err error) {
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
-	dec.DisallowUnknownFields()
+	// 业务层逐字段校验；不在此处拒绝未知字段（离线队列操作会携带
+	// created_at/device 等客户端元数据）
 	if err := dec.Decode(v); err != nil {
 		return &ledger.Error{Code: "invalid_input", Message: "invalid JSON body", HTTP: 400}
 	}

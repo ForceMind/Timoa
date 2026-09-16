@@ -7,6 +7,8 @@ import { RulesPanel, TemplatesPanel } from './manage'
 import { MembersPanel } from './members'
 import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 import { StatsView } from './stats'
+import { sync, type SyncState } from './sync'
+import { exportOutbox } from './db'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
 
@@ -48,7 +50,7 @@ function JoinView({ token, onJoined }: { token: string; onJoined: (m: Me) => voi
 
   return (
     <div className="login-wrap">
-      <div className="logo">账</div>
+      <img src="/icons/icon-192.png" alt="Timoa" style={{ width: 72, height: 72, borderRadius: 18, marginBottom: 14 }} />
       <h1>{brand.name}</h1>
       <p className="slogan">你受邀加入家庭账本。设置你的账号即可开始共同记账。</p>
       {err && <div className="alert" role="alert">{err}</div>}
@@ -87,7 +89,7 @@ function Login({ onLogin }: { onLogin: (m: Me) => void }) {
 
   return (
     <div className="login-wrap">
-      <div className="logo">账</div>
+      <img src="/icons/icon-192.png" alt="Timoa" style={{ width: 72, height: 72, borderRadius: 18, marginBottom: 14 }} />
       <h1>{brand.name}</h1>
       <p className="slogan">{brand.slogan}</p>
       {needsInit && <div className="notice">尚未创建管理员。请在服务器本机执行：xiaozhang init-admin -username &lt;用户名&gt;</div>}
@@ -214,11 +216,11 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
       {view === 'stats' && <StatsView expenseCats={expenseCats} />}
       {view === 'me' && <MeView me={me} accounts={accounts} expenseCats={expenseCats} onLogout={onLogout} onChanged={reload} />}
       <nav className="tabbar" aria-label="主导航">
-        <button className={view === 'home' ? 'on' : ''} onClick={() => nav('home')}><span className="ti">⌂</span>首页</button>
-        <button className={view === 'txs' ? 'on' : ''} onClick={() => nav('txs')}><span className="ti">☰</span>流水</button>
-        <button className="fab-wrap" onClick={() => startEntry(null)} aria-label="记一笔"><span className="fab">＋</span><span>记一笔</span></button>
-        <button className={view === 'stats' ? 'on' : ''} onClick={() => nav('stats')}><span className="ti">▤</span>统计</button>
-        <button className={view === 'me' ? 'on' : ''} onClick={() => nav('me')}><span className="ti">☺</span>我的</button>
+        <button className={view === 'home' ? 'on' : ''} onClick={() => nav('home')}><img src="/icons/nav-home.png" alt="" className="ti" />首页</button>
+        <button className={view === 'txs' ? 'on' : ''} onClick={() => nav('txs')}><img src="/icons/nav-list.png" alt="" className="ti" />流水</button>
+        <button className="fab-wrap" onClick={() => startEntry(null)} aria-label="记一笔"><img src="/icons/nav-plus.png" alt="" className="fab-img" /><span>记一笔</span></button>
+        <button className={view === 'stats' ? 'on' : ''} onClick={() => nav('stats')}><img src="/icons/nav-stats.png" alt="" className="ti" />统计</button>
+        <button className={view === 'me' ? 'on' : ''} onClick={() => nav('me')}><img src="/icons/nav-me.png" alt="" className="ti" />我的</button>
       </nav>
     </div>
   )
@@ -440,7 +442,21 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
-  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members'>('')
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings'>('')
+  const [syncState, setSyncState] = useState<SyncState>({ status: 'disabled', pending: 0 })
+  const [offlineOn, setOfflineOn] = useState(false)
+  useEffect(() => sync.subscribe(setSyncState), [])
+  useEffect(() => { setOfflineOn(syncState.status !== 'disabled') }, [syncState.status])
+
+  const statusText: Record<string, string> = {
+    disabled: '离线缓存未启用（共享设备建议保持关闭）',
+    offline: '离线中：记账将先保存到本机',
+    pending: `${syncState.pending} 笔待同步`,
+    synced: `已同步${syncState.lastSync ? ` · ${syncState.lastSync.slice(0, 16).replace('T', ' ')}` : ''}`,
+    generation_mismatch: '服务器经历恢复，需要全量重同步后才能继续',
+    error: '同步出错，将自动重试',
+  }
+
   return (
     <>
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
@@ -460,7 +476,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       </div>
       <div className="panel">
         <h2>管理</h2>
-        <div className="chips" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
           <button className="chip" onClick={() => setManage(manage === 'members' ? '' : 'members')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>👪</span><span>成员</span>
           </button>
@@ -473,12 +489,43 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
           <button className="chip" onClick={() => setManage(manage === 'data' ? '' : 'data')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>📦</span><span>数据</span>
           </button>
+          <button className="chip" onClick={() => setManage(manage === 'settings' ? '' : 'settings')}>
+            <span className="ic" style={{ background: 'var(--primary-soft)' }}>⚙️</span><span>设置</span>
+          </button>
         </div>
       </div>
       {manage === 'members' && <MembersPanel meID={me.user_id} isAdmin={me.role === 'admin'} onChanged={onChanged} />}
       {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
       {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}
       {manage === 'data' && <DataPanel accounts={accounts} expenseCats={expenseCats} onChanged={onChanged} />}
+      {manage === 'settings' && (
+        <div className="panel">
+          <h2>离线与同步</h2>
+          <div className="tx">
+            <div className="main">
+              <div className="title">本机离线缓存</div>
+              <div className="meta">可信设备才开启；共享设备不要开启（本机缓存不是加密保险箱）</div>
+            </div>
+            <button className="btn-text" onClick={() => sync.setEnabled(!offlineOn)}>{offlineOn ? '关闭' : '开启'}</button>
+          </div>
+          <div className="notice">{statusText[syncState.status]}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn-text" onClick={() => sync.flush()}>立即同步</button>
+            {syncState.status === 'generation_mismatch' && (
+              <button className="btn-text" onClick={() => sync.fullResync()}>全量重同步</button>
+            )}
+            {syncState.pending > 0 && (
+              <button className="btn-text" onClick={async () => {
+                const blob = new Blob([await exportOutbox()], { type: 'application/json' })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = 'xiaozhang-outbox.json'
+                a.click()
+              }}>导出未同步内容</button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="panel">
         <h2>关于</h2>
         <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: 1.8 }}>
@@ -558,6 +605,7 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
   const [loanID, setLoanID] = useState('')
   const [principal, setPrincipal] = useState('')
   const [err, setErr] = useState('')
+  const [okLocal, setOkLocal] = useState('')
   const [busy, setBusy] = useState(false)
 
   const cats = type === 'income' ? incomeCats : expenseCats
@@ -648,20 +696,41 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
     }
 
     setBusy(true)
+    const payload = {
+      type, business_date: new Date().toISOString(), amount: yuanOf(amount),
+      category_id: type === 'transfer' || splits ? undefined : catID,
+      splits,
+      from_account_id: fromID || undefined, to_account_id: toID || undefined,
+      note: note || undefined, merchant: merchant || undefined,
+      recurrence_instance_id: prefill?.instanceID,
+      operation_id: crypto.randomUUID(),
+    }
+    // 离线：本机队列保存（待同步），明确告知不是服务器确认
+    if (sync.enabled && !navigator.onLine) {
+      try {
+        await sync.queue({ operation_id: payload.operation_id as string, type: 'transaction', payload })
+        setOkLocal('已保存到本机（待同步，联网后自动入账）')
+        onSaved(again)
+        if (again) { setAmount(''); setNote(''); setAdvance(''); setDiscount(''); setBusy(false) }
+      } catch {
+        setErr('本机存储失败（可能空间不足），请保留当前输入并联网后重试')
+        setBusy(false)
+      }
+      return
+    }
     try {
-      await api.post({
-        type, business_date: new Date().toISOString(), amount: yuanOf(amount),
-        category_id: type === 'transfer' || splits ? undefined : catID,
-        splits,
-        from_account_id: fromID || undefined, to_account_id: toID || undefined,
-        note: note || undefined, merchant: merchant || undefined,
-        recurrence_instance_id: prefill?.instanceID,
-        operation_id: crypto.randomUUID(),
-      })
+      await api.post(payload)
       onSaved(again)
       if (again) { setAmount(''); setNote(''); setAdvance(''); setDiscount(''); setBusy(false) }
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : '保存失败'); setBusy(false)
+      // 网络故障且已启用离线：转入本机队列；其他错误照常显示
+      if (sync.enabled && e instanceof TypeError) {
+        await sync.queue({ operation_id: payload.operation_id as string, type: 'transaction', payload })
+        setOkLocal('网络异常，已保存到本机（待同步）')
+        onSaved(again)
+      } else {
+        setErr(e instanceof ApiError ? e.message : '保存失败'); setBusy(false)
+      }
     }
   }
 
@@ -687,6 +756,7 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
         </div>
       )}
       {err && <div className="alert" role="alert">{err}</div>}
+      {okLocal && <div className="notice">{okLocal}</div>}
       <div className="panel">
         <div className="amount-row">
           <span>¥</span>
