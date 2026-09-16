@@ -209,7 +209,7 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
       {err && <div className="alert" role="alert">{err}</div>}
       {view === 'home' && (
         <HomeView me={me} monthLabel={m.label} summary={summary} prevSummary={prevSummary} days={days} txs={txs}
-          pending={pending} recs={recs} templates={templates}
+          pending={pending} recs={recs} templates={templates} accounts={accounts}
           onOpen={openDetail} onEntry={startEntry} onChanged={reload} />
       )}
       {view === 'txs' && <TxsView txs={txs} onOpen={openDetail} />}
@@ -250,10 +250,11 @@ function compareBadge(cur: string, prev: string): string | null {
   return `较上月 ${arrow}${abs}%`
 }
 
-function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, recs, templates, onOpen, onEntry, onChanged }: {
+function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, recs, templates, accounts, onOpen, onEntry, onChanged }: {
   me: Me; monthLabel: string; summary: Summary | null; prevSummary: Summary | null
   days: DailySum[]; txs: Tx[]
   pending: RecurrenceInstance[]; recs: Recommendation[]; templates: Template[]
+  accounts: Account[]
   onOpen: (id: string) => void
   onEntry: (p: EntryPrefill) => void
   onChanged: () => void
@@ -262,6 +263,10 @@ function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, re
   const filtered = txs.filter((t) => tab === 'all' || t.type === tab).slice(0, 8)
   const badge = summary && prevSummary ? compareBadge(summary.expense_cents, prevSummary.expense_cents) : null
   const pinnedTpls = templates.filter((t) => t.enabled && t.pinned).slice(0, 8)
+  // 储值卡到期提醒（7 天内到期且有余额）
+  const expiringSV = accounts.filter((a) =>
+    a.type === 'stored_value' && a.expires_on && a.balance_cents !== '0' &&
+    new Date(a.expires_on) <= new Date(Date.now() + 7 * 86400000))
 
   const yuan = (cents?: string) => cents ? (Number(cents) / 100).toFixed(2) : undefined
 
@@ -281,6 +286,21 @@ function HomeView({ me, monthLabel, summary, prevSummary, days, txs, pending, re
           <span className="income"><span className="label">本月收入</span><br /><span className="v">¥ {summary ? formatCents(summary.income_cents) : '—'}</span></span>
         </div>
       </div>
+
+      {expiringSV.length > 0 && (
+        <div className="panel">
+          <h2>储值卡到期提醒</h2>
+          {expiringSV.map((a) => (
+            <div className="tx" key={a.id}>
+              <div className="icon" style={{ background: 'var(--primary-soft)' }}>⏰</div>
+              <div className="main">
+                <div className="title">{a.name}</div>
+                <div className="meta">{a.expires_on} 到期 · 余额 ¥{formatCents(a.balance_cents)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="panel">
@@ -499,9 +519,20 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
               <div className="icon" style={{ background: 'var(--primary-soft)' }}>💳</div>
               <div className="main">
                 <div className="title">{a.name}</div>
-                <div className="meta">{ACCOUNT_TYPES[a.type] ?? a.type}{a.balance_unconfirmed ? ' · 余额未确认' : ''}</div>
+                <div className="meta">
+                  {ACCOUNT_TYPES[a.type] ?? a.type}{a.balance_unconfirmed ? ' · 余额未确认' : ''}
+                  {a.type === 'stored_value' && a.expires_on ? ` · ${a.expires_on} 到期` : ''}
+                </div>
               </div>
               <div className="amt">¥{formatCents(a.balance_cents)}</div>
+              {me.role === 'admin' && !a.archived && a.type === 'stored_value' && (
+                <button className="btn-text" style={{ fontSize: '0.8rem' }}
+                  onClick={() => {
+                    const d = prompt('到期日（YYYY-MM-DD，留空清除）', a.expires_on ?? '')
+                    if (d === null) return
+                    void api.setStoredValueMeta(a.id, a.face_value_cents ? formatCents(a.face_value_cents) : '', d.trim()).then(onChanged)
+                  }}>效期</button>
+              )}
               {me.role === 'admin' && !a.archived && !['credit_card', 'huabei', 'loan_liability'].includes(a.type) && (
                 <button className="btn-text" style={{ fontSize: '0.8rem' }}
                   onClick={() => setSubForm(subForm === a.id ? '' : a.id)}>＋子账户</button>

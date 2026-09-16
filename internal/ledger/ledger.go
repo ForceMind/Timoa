@@ -85,6 +85,8 @@ type Account struct {
 	Archived           bool   `json:"archived"`
 	Balance            string `json:"balance_cents"`
 	BalanceUnconfirmed bool   `json:"balance_unconfirmed"`
+	FaceValue          string `json:"face_value_cents,omitempty"` // 储值卡面额
+	ExpiresOn          string `json:"expires_on,omitempty"`       // 储值卡到期日
 }
 
 func subjectCode(prefix, id string) string { return prefix + id }
@@ -227,6 +229,50 @@ func (s *Service) ArchiveAccount(ledgerID, actorID, accountID string) error {
 	return nil
 }
 
+// SetStoredValueMeta 设置储值卡面额与到期日（仅 stored_value 类型）。
+func (s *Service) SetStoredValueMeta(ledgerID, accountID string, faceValueCents int64, expiresOn string) error {
+	if expiresOn != "" {
+		if _, err := time.Parse("2006-01-02", expiresOn); err != nil {
+			return errf(400, "invalid_input", "expires_on must be YYYY-MM-DD")
+		}
+	}
+	res, err := s.db.Exec(`UPDATE accounts SET face_value_cents=?, expires_on=?
+		WHERE id=? AND ledger_id=? AND type='stored_value'`,
+		faceValueCents, nullIfEmpty(expiresOn), accountID, ledgerID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errf(400, "invalid_input", "not a stored-value account")
+	}
+	return nil
+}
+
+// ExpiringStoredValue 返回即将到期的储值卡（余额 > 0 且到期日在 horizon 天内）。
+func (s *Service) ExpiringStoredValue(ledgerID string, withinDays int) ([]Account, error) {
+	accts, err := s.listAccounts(ledgerID, "")
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	horizon := now.AddDate(0, 0, withinDays)
+	out := []Account{}
+	for _, a := range accts {
+		if a.Type != "stored_value" || a.ExpiresOn == "" || a.Archived {
+			continue
+		}
+		exp, err := time.Parse("2006-01-02", a.ExpiresOn)
+		if err != nil || exp.After(horizon) || exp.Before(now.AddDate(0, 0, -1)) {
+			continue
+		}
+		bal, _ := strconv.ParseInt(a.Balance, 10, 64)
+		if bal > 0 {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
 // GetAccount loads one account with its computed balance.
 func (s *Service) GetAccount(ledgerID, accountID string) (*Account, error) {
 	accts, err := s.listAccounts(ledgerID, accountID)
@@ -248,7 +294,7 @@ func (s *Service) ListAccounts(ledgerID string) ([]Account, error) {
 func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 	q := `SELECT a.id,a.ledger_id,a.name,a.type,COALESCE(a.holder_user_id,''),a.opening_balance_cents,
 		COALESCE(a.opening_date,''),a.balance_confirmed,a.include_in_funds,a.archived_at IS NOT NULL,s.kind,
-		COALESCE(a.parent_id,''),
+		COALESCE(a.parent_id,''),COALESCE(a.face_value_cents,0),COALESCE(a.expires_on,''),
 		COALESCE((
 			SELECT SUM(CASE WHEN e.direction='debit' THEN e.amount_cents ELSE -e.amount_cents END)
 			FROM entries e JOIN transactions t ON t.id=e.tx_id
@@ -275,10 +321,16 @@ func (s *Service) listAccounts(ledgerID, onlyID string) ([]Account, error) {
 		var confirmed, include, archived int
 		var kind string
 		var net int64
+		var faceValue int64
+		var expiresOn string
 		if err := rows.Scan(&a.ID, &a.LedgerID, &a.Name, &a.Type, &a.HolderUserID, &opening,
-			&a.OpeningDate, &confirmed, &include, &archived, &kind, &a.ParentID, &net); err != nil {
+			&a.OpeningDate, &confirmed, &include, &archived, &kind, &a.ParentID, &faceValue, &expiresOn, &net); err != nil {
 			return nil, err
 		}
+		if faceValue > 0 {
+			a.FaceValue = fmt.Sprintf("%d", faceValue)
+		}
+		a.ExpiresOn = expiresOn
 		a.OpeningBalance = fmt.Sprintf("%d", opening)
 		a.BalanceConfirmed = confirmed == 1
 		a.IncludeInFunds = include == 1

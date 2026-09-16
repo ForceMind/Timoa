@@ -60,5 +60,27 @@ func (s *Service) CalendarMonth(ledgerID, month string) ([]CalendarDay, error) {
 		}
 		d.Events = append(d.Events, ev)
 	}
+
+	// 储值卡到期提醒（本月到期的卡进日历事件）
+	svRows, err := s.db.Query(`SELECT id,name,expires_on FROM accounts
+		WHERE ledger_id=? AND type='stored_value' AND expires_on IS NOT NULL
+		AND expires_on>=? AND expires_on<? AND archived_at IS NULL`, ledgerID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer svRows.Close()
+	for svRows.Next() {
+		var id, name, exp string
+		if err := svRows.Scan(&id, &name, &exp); err != nil {
+			return nil, err
+		}
+		d, ok := byDate[exp]
+		if !ok {
+			out = append(out, CalendarDay{Date: exp, ExpenseCents: "0", IncomeCents: "0"})
+			d = &out[len(out)-1]
+			byDate[exp] = d
+		}
+		d.Events = append(d.Events, CalendarEvent{Kind: "stored_value_expiry", Name: name + " 到期", Status: "expiring", RefID: id})
+	}
 	return out, nil
 }

@@ -45,6 +45,8 @@ export interface Account {
   archived: boolean
   parent_id?: string
   sub_kind?: 'current' | 'deposit' | 'investment'
+  face_value_cents?: string
+  expires_on?: string
 }
 
 export interface Category {
@@ -90,6 +92,8 @@ export const api = {
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),
   createSubAccount: (parentID: string, b: { name: string; sub_kind: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>(`/api/v1/accounts/${parentID}/sub`, { method: 'POST', body: JSON.stringify(b) }),
+  setStoredValueMeta: (id: string, faceValue: string, expiresOn: string) =>
+    req(`/api/v1/accounts/${id}/stored-value-meta`, { method: 'POST', body: JSON.stringify({ face_value: faceValue, expires_on: expiresOn }) }),
   categories: (kind: 'expense' | 'income') => req<{ categories: Category[] }>(`/api/v1/categories?kind=${kind}`),
   transactions: (limit = 30) => req<{ transactions: Tx[] }>(`/api/v1/transactions?limit=${limit}`),
   post: (b: Record<string, unknown>) =>

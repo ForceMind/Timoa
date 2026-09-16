@@ -41,6 +41,7 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/accounts", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/archive", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.archiveAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/sub", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createSubAccount))))
+	mux.Handle("POST /api/v1/accounts/{id}/stored-value-meta", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.setStoredValueMeta))))
 
 	mux.Handle("GET /api/v1/categories", s.requireAuth(http.HandlerFunc(s.listCategories)))
 	mux.Handle("POST /api/v1/categories", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createCategory))))
@@ -406,6 +407,36 @@ func (s *server) createSubAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, acct)
+}
+
+// setStoredValueMeta：储值卡面额与到期日。
+func (s *server) setStoredValueMeta(w http.ResponseWriter, r *http.Request) {
+	m := s.mustMembership(w, r)
+	if m == nil {
+		return
+	}
+	var body struct {
+		FaceValueCents string `json:"face_value"` // yuan string, may be ""
+		ExpiresOn      string `json:"expires_on"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, err)
+		return
+	}
+	var face int64
+	if strings.TrimSpace(body.FaceValueCents) != "" {
+		c, err := money.ParseYuan(body.FaceValueCents)
+		if err != nil {
+			writeErr(w, 400, "invalid_amount", "face value: "+err.Error())
+			return
+		}
+		face = c
+	}
+	if err := s.ledger.SetStoredValueMeta(m.ledgerID, r.PathValue("id"), face, body.ExpiresOn); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *server) listCategories(w http.ResponseWriter, r *http.Request) {
