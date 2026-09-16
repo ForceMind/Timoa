@@ -1,9 +1,29 @@
 # 部署指南（单服务器自托管）
 
 > 目标：一台 Linux 服务器即可运行；不需要 Node 常驻、Redis、外部数据库。
-> 默认监听 127.0.0.1:8787，由既有反向代理提供 HTTPS。未配置 HTTPS 时不要把端口暴露公网。
 
-## 方式 A：Docker Compose（推荐）
+## 方式 A：一键脚本（推荐）
+
+在服务器上以 root 执行一条命令（支持 amd64/arm64，需 systemd + curl）：
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/install.sh)
+```
+
+脚本自动完成：下载最新 Release 预编译二进制（SHA256 校验）→ 创建 xiaozhang 系统用户与
+`/var/lib/xiaozhang` 数据目录 → 写入最小权限 systemd 单元并启动 → 交互式初始化管理员。
+
+- 访问：`http://<服务器IP>:8787`（公网访问需在防火墙放行 8787，如 `ufw allow 8787`）
+- 升级：`bash <(curl -Ls .../install.sh) upgrade`（数据保留）
+- 卸载：`bash <(curl -Ls .../install.sh) uninstall`（数据目录保留）
+- 指定版本：`bash <(curl -Ls .../install.sh) install v1.0.0`
+- 配置：`/etc/xiaozhang/env`（改后 `systemctl restart xiaozhang`）
+
+> 一键方式监听 0.0.0.0:8787 且为明文 HTTP：适合内网/家庭服务器/先试用。
+> 长期公网使用建议套 HTTPS 反代（见下文），并在 `/etc/xiaozhang/env` 开启
+> `XIAOZHANG_SECURE_COOKIES=1`。
+
+## 方式 B：Docker Compose
 
 ```bash
 git clone <repo> && cd Timoa
@@ -16,7 +36,7 @@ curl http://127.0.0.1:8787/healthz
 升级：`docker compose up -d --build`（数据在 named volume，升级不丢数据）。
 备份：`docker compose exec xiaozhang xiaozhang backup -data /data`，或等待每日自动备份。
 
-## 方式 B：systemd 原生
+## 方式 C：systemd 原生（从源码构建）
 
 ```bash
 # 构建（需要 Go 1.27+ 与 Node 24+）

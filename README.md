@@ -2,7 +2,16 @@
 
 日常小账，心里有数。单服务器自托管的个人与中国家庭记账 PWA。
 
-## 快速开始
+## 服务器一键安装
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/install.sh)
+```
+
+一条命令完成安装（预编译二进制 + systemd 服务 + 管理员初始化），访问 `http://<服务器IP>:8787`。
+升级/卸载/手动部署详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
+
+## 本地开发
 
 ```bash
 # 后端（默认 127.0.0.1:8787，数据目录 ./data）
