@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type Category, type Note, type RecurrenceRule, type Template } from './api'
+import { api, ApiError, type AmortizationPlan, type Category, type Note, type RecurrenceRule, type Template } from './api'
 import { formatCents, parseYuan } from './money'
 
 // 我的 → 模板管理与周期管理：新增/启用/置顶均在同页完成（二级页面内
@@ -237,6 +237,112 @@ export function NotesPanel() {
                 {n.pinned ? '取消置顶' : '置顶'}
               </button>
               <button className="btn-text" onClick={async () => { await api.deleteNote(n.id); load() }}>删除</button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function AmortPanel({ expenseCats, accounts, isAdmin, onChanged }: { expenseCats: Category[]; accounts: import('./api').Account[]; isAdmin: boolean; onChanged: () => void }) {
+  const [plans, setPlans] = useState<AmortizationPlan[]>([])
+  const [err, setErr] = useState('')
+  // 创建表单
+  const [txID, setTxID] = useState('')
+  const [txs, setTxs] = useState<import('./api').Tx[]>([])
+  const [catID, setCatID] = useState('')
+  const [accID, setAccID] = useState('')
+  const [total, setTotal] = useState('')
+  const [periods, setPeriods] = useState('12')
+  const [anchor, setAnchor] = useState(new Date().toISOString().slice(0, 10))
+
+  const load = () => api.amortizations().then((r) => setPlans(r.plans)).catch((e) => setErr(String(e)))
+  useEffect(() => {
+    load()
+    api.transactions(50).then((r) => setTxs(r.transactions.filter((t) => t.type === 'expense'))).catch(() => {})
+  }, [])
+
+  async function add() {
+    setErr('')
+    if (!isAdmin) { setErr('仅管理员可创建分摊计划'); return }
+    if (!txID || !catID || !accID) { setErr('请选择原支出、费用分类与出账账户'); return }
+    const cents = parseYuan(total)
+    const n = parseInt(periods, 10)
+    if (!cents || BigInt(cents) <= 0n) { setErr('请输入分摊总额（元）'); return }
+    if (!Number.isInteger(n) || n < 2) { setErr('期数须 ≥ 2'); return }
+    if (!anchor) { setErr('请选择首期日期'); return }
+    try {
+      await api.createAmortization({ tx_id: txID, category_id: catID, account_id: accID, total_cents: cents, periods: n, anchor_date: anchor })
+      setTxID(''); setTotal('')
+      load()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : '创建失败')
+    }
+  }
+
+  const label: Record<string, string> = { active: '进行中', done: '已完成', cancelled: '已取消' }
+
+  return (
+    <div className="panel">
+      <h2>分摊计划 <span className="more">大额支出按期摊销为费用，关联原交易</span></h2>
+      {err && <div className="alert">{err}</div>}
+      <div className="field">
+        <label>原支出（大额）</label>
+        <select value={txID} onChange={(e) => setTxID(e.target.value)}>
+          <option value="">选择支出单…</option>
+          {txs.map((t) => <option key={t.id} value={t.id}>{t.business_date.slice(0, 10)} {t.note || t.category_name || '支出'} {formatCents(t.amount_cents)}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>摊销费用分类</label>
+        <select value={catID} onChange={(e) => setCatID(e.target.value)}>
+          <option value="">选择分类…</option>
+          {expenseCats.map((c) => <option key={c.id} value={c.id}>{c.icon || ''} {c.name}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>出账账户</label>
+        <select value={accID} onChange={(e) => setAccID(e.target.value)}>
+          <option value="">选择账户…</option>
+          {accounts.filter((a) => a.type !== 'receivable' && a.type !== 'payable').map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label>分摊总额（元）</label>
+        <input inputMode="decimal" placeholder="如 12000" value={total} onChange={(e) => setTotal(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>期数</label>
+        <input inputMode="numeric" placeholder="如 12" value={periods} onChange={(e) => setPeriods(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>首期计提日</label>
+        <input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} />
+      </div>
+      <button className="btn" onClick={add} disabled={!isAdmin}>创建计划</button>
+      {!isAdmin && <div className="more" style={{ marginTop: 8 }}>仅管理员可创建、计提或取消计划。</div>}
+
+      {plans.length === 0 && <div className="empty">还没有分摊计划。</div>}
+      {plans.map((p) => (
+        <div className="tx" key={p.id}>
+          <div className="main">
+            <div className="title">
+              {formatCents(p.total_cents)} ÷ {p.periods}期（每期 {formatCents(p.period_cents)}）
+              <span className="chip" style={{ marginLeft: 8 }}>{label[p.status] || p.status}</span>
+            </div>
+            <div className="meta">
+              {p.category_name} · {p.account_name} · 首期 {p.anchor_date} · 已计提 {p.done_periods}/{p.periods}
+            </div>
+          </div>
+          {p.status === 'active' && isAdmin && (
+            <>
+              <button className="btn-text" onClick={async () => {
+                try { await api.runAmortization(p.id); load(); onChanged() } catch (e) { setErr(e instanceof ApiError ? e.message : '计提失败') }
+              }}>计提一期</button>
+              <button className="btn-text" onClick={async () => {
+                try { await api.cancelAmortization(p.id); load() } catch (e) { setErr(e instanceof ApiError ? e.message : '取消失败') }
+              }}>取消</button>
             </>
           )}
         </div>

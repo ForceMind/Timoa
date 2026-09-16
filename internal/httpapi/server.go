@@ -85,6 +85,11 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/recurrence/instances/{id}/postpone", s.requireAuth(http.HandlerFunc(s.postponeInstance)))
 	mux.Handle("GET /api/v1/recommendations", s.requireAuth(http.HandlerFunc(s.recommendations)))
 
+	mux.Handle("GET /api/v1/amortizations", s.requireAuth(http.HandlerFunc(s.listAmortizations)))
+	mux.Handle("POST /api/v1/amortizations", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createAmortization))))
+	mux.Handle("POST /api/v1/amortizations/{id}/run", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.runAmortization))))
+	mux.Handle("POST /api/v1/amortizations/{id}/cancel", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.cancelAmortization))))
+
 	mux.Handle("POST /api/v1/budgets", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.setBudget))))
 	mux.Handle("GET /api/v1/budgets/status", s.requireAuth(http.HandlerFunc(s.budgetStatus)))
 	mux.Handle("POST /api/v1/budgets/{id}/delete", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.deleteBudget))))

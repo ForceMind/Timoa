@@ -156,6 +156,26 @@ export const api = {
   createNote: (content: string) => req<Note>('/api/v1/notes', { method: 'POST', body: JSON.stringify({ content }) }),
   updateNote: (id: string, content: string, pinned: boolean) => req(`/api/v1/notes/${id}`, { method: 'POST', body: JSON.stringify({ content, pinned }) }),
   deleteNote: (id: string) => req(`/api/v1/notes/${id}`, { method: 'DELETE' }),
+  amortizations: () => req<{ plans: AmortizationPlan[] }>('/api/v1/amortizations'),
+  createAmortization: (b: Record<string, unknown>) => req('/api/v1/amortizations', { method: 'POST', body: JSON.stringify(b) }),
+  runAmortization: (id: string) => req(`/api/v1/amortizations/${id}/run`, { method: 'POST' }),
+  cancelAmortization: (id: string) => req(`/api/v1/amortizations/${id}/cancel`, { method: 'POST' }),
+}
+
+export interface AmortizationPlan {
+  id: string
+  tx_id: string
+  category_id: string
+  category_name?: string
+  account_id: string
+  account_name?: string
+  total_cents: string
+  periods: number
+  period_cents: string
+  anchor_date: string
+  done_periods: number
+  status: string
+  created_at: string
 }
 
 export interface Note {
