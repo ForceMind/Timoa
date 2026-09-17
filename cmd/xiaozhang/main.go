@@ -57,6 +57,9 @@ func main() {
 		case "panel":
 			cmdPanel(os.Args[2:])
 			return
+		case "admin":
+			cmdAdmin(os.Args[2:])
+			return
 		}
 	}
 	cmdServe(os.Args[1:])
