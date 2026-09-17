@@ -2,6 +2,8 @@
 
 日常小账，心里有数。单服务器自托管的个人与中国家庭记账 PWA。
 
+支持**多用户**：官网落地页 + 公开注册（注册即得独立账本，互相隔离）+ 登录；平台超管后台可看跨用户统计/元数据并管理用户（不看任何账目明细）。家庭共享仍走账本内邀请。
+
 ## 服务器一键安装
 
 ```bash
@@ -34,11 +36,15 @@ cd web && npm install && npm run dev
 ## 管理员初始化
 
 ```bash
-# 关闭公开注册；首个管理员只能在服务器本机创建
+# 首个管理员只能在服务器本机创建（此后可在官网公开注册普通用户）
 XIAOZHANG_ADMIN_PASSWORD='<至少8位>' go run ./cmd/xiaozhang init-admin -username admin
 # 忘记密码（需要服务器本机权限，吊销旧会话并写审计）
 XIAOZHANG_ADMIN_PASSWORD='<新密码>' go run ./cmd/xiaozhang reset-password -username admin
+# 提升为平台超管（服务器本机；超管后台在我的 → 平台，只看统计/元数据）
+go run ./cmd/xiaozhang make-superadmin -username admin
 ```
+
+已用一键脚本部署的，对应命令为 `xiaozhang init-admin|reset-password|make-superadmin -data /var/lib/xiaozhang ...`（用 `sudo -u xiaozhang` 执行）。
 
 ## 测试
 
