@@ -97,6 +97,11 @@ func (s *Service) RegisterUser(username, displayName, password string) (userID s
 			return "", err
 		}
 	}
+	// 默认「现金」资金账户：注册即可直接记账，无需先建账户（复式分录需要资金科目）。
+	// 用户可随时在我的 → 资金账户里新增/归档。
+	if err := seedDefaultCashAccount(tx, ledgerID, userID); err != nil {
+		return "", err
+	}
 	if err := audit(tx, ledgerID, userID, "user.register", "user", userID, map[string]any{"username": username}); err != nil {
 		return "", err
 	}
@@ -104,6 +109,22 @@ func (s *Service) RegisterUser(username, displayName, password string) (userID s
 		return "", err
 	}
 	return userID, nil
+}
+
+// seedDefaultCashAccount 在注册事务内建一个默认「现金」账户（现金类型资产），
+// 与 CreateAccount 的分录结构一致，但复用外层事务、期初余额 0、未确认。
+func seedDefaultCashAccount(tx *sql.Tx, ledgerID, actorID string) error {
+	acctID := ids.New()
+	subID := ids.New()
+	if _, err := tx.Exec(`INSERT INTO subjects(id,ledger_id,kind,code,name) VALUES(?,?,?,?,?)`,
+		subID, ledgerID, "asset", subjectCode("asset:acct:", acctID), "现金"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO accounts(id,ledger_id,subject_id,name,type,holder_user_id,opening_balance_cents,opening_date,balance_confirmed)
+		VALUES(?,?,?,?,'cash',NULL,0,NULL,0)`, acctID, ledgerID, subID, "现金"); err != nil {
+		return err
+	}
+	return audit(tx, ledgerID, actorID, "account.create", "account", acctID, map[string]any{"name": "现金", "type": "cash", "seed": true})
 }
 
 // PlatformUser 平台视角的用户元数据（不含任何账目明细）。

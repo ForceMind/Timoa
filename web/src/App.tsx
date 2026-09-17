@@ -150,6 +150,7 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const [view, setView] = useState<View>('home')
   const [detailID, setDetailID] = useState<string | null>(null)
   const [prefill, setPrefill] = useState<EntryPrefill | null>(null)
+  const [skipAccount, setSkipAccount] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expenseCats, setExpenseCats] = useState<Category[]>([])
   const [incomeCats, setIncomeCats] = useState<Category[]>([])
@@ -190,12 +191,15 @@ function Main({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const nav = (v: View) => { setDetailID(null); setView(v) }
   const startEntry = (p: EntryPrefill | null) => { setPrefill(p); setView('entry') }
 
-  if (accounts.length === 0 && view !== 'me') {
+  if (accounts.length === 0 && !skipAccount && view !== 'me') {
     return (
       <div className="shell">
         <div className="greet"><h1>{me.ledger_name}</h1><div className="sub">{brand.slogan}</div></div>
         {err && <div className="alert" role="alert">{err}</div>}
         <FirstAccount onCreated={reload} />
+        <button className="btn-text" style={{ width: '100%' }} onClick={() => setSkipAccount(true)}>
+          先跳过，直接开始记账（可稍后在「我的 → 资金账户」添加）
+        </button>
       </div>
     )
   }

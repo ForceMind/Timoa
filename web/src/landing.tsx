@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError, type Me } from './api'
 import { brand } from './brand'
+import { InstallPromptOnce } from './installprompt'
 
 // landing.tsx: 官网落地页（未登录首屏）+ 公开注册。
 // 落地页是产品介绍；注册/登录从这里进入。账目数据完全按账本隔离，
@@ -66,6 +67,7 @@ export function Register({ onRegistered, onBack }: { onRegistered: (m: Me) => vo
   const [password2, setPassword2] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [newUser, setNewUser] = useState<Me | null>(null)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -73,10 +75,15 @@ export function Register({ onRegistered, onBack }: { onRegistered: (m: Me) => vo
     setBusy(true); setErr('')
     try {
       await api.register({ username, password, display_name: name || undefined })
-      onRegistered(await api.me())
+      // 注册成功 → 先弹一次性 PWA 安装引导，关闭后再进入应用
+      setNewUser(await api.me())
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : '注册失败，请稍后重试')
     } finally { setBusy(false) }
+  }
+
+  if (newUser) {
+    return <InstallPromptOnce onDone={() => onRegistered(newUser)} />
   }
 
   return (

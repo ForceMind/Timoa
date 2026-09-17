@@ -31,6 +31,15 @@ func TestPlatformRegisterAndOverview(t *testing.T) {
 		t.Fatalf("registrant should be admin of own ledger, got %q", role)
 	}
 
+	// 注册即建默认「现金」账户（开箱即可记账）
+	var cashAcct int
+	if err := e.db.QueryRow(`SELECT COUNT(1) FROM accounts WHERE ledger_id=? AND type='cash' AND name='现金'`, ledgerID).Scan(&cashAcct); err != nil {
+		t.Fatal(err)
+	}
+	if cashAcct != 1 {
+		t.Fatalf("default cash account missing, got %d", cashAcct)
+	}
+
 	// 用户名唯一约束
 	if _, err := e.svc.RegisterUser("alice", "A2", "password-456"); err == nil {
 		t.Fatal("duplicate username accepted")
