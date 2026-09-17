@@ -57,7 +57,7 @@ func TestInviteAndMemberPermissions(t *testing.T) {
 	}
 
 	// 成员会话有效 → 撤销后立即失效
-	sess, err := auth.CreateSession(e.db, memberID, "test")
+	sess, err := auth.CreateSession(e.db, memberID, "test", "")
 	if err != nil {
 		t.Fatal(err)
 	}
