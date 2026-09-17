@@ -12,7 +12,8 @@ import { exportOutbox } from './db'
 import { Landing } from './landing'
 import { AdminPanel } from './admin'
 import { OpsPanel } from './opspanel'
-import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
+import { AccountForm } from './accountform'
+import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme''
 import { installState, promptInstall, subscribeInstall, type InstallState } from './pwa'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
@@ -541,6 +542,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   useEffect(() => subscribeInstall(() => setInstallSt(installState())), [])
   // 子账户创建表单
   const [subForm, setSubForm] = useState('')
+  const [showAccountForm, setShowAccountForm] = useState(false)
   const [subKind, setSubKind] = useState<'current' | 'deposit' | 'investment'>('current')
   const [subName, setSubName] = useState('')
   const [subOpening, setSubOpening] = useState('')
@@ -571,7 +573,10 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
     <>
       <div className="greet"><h1>我的</h1><div className="sub">{me.display_name} · {me.role === 'admin' ? '管理员' : '成员'}</div></div>
       <div className="panel">
-        <h2>资金账户 <span className="more">按已录入记录计算</span></h2>
+        <h2>资金账户 <span className="more">按已录入记录计算</span>
+          {me.role === 'admin' && <button className="btn-text" style={{ marginLeft: 8 }} onClick={() => setShowAccountForm(!showAccountForm)}>{showAccountForm ? '取消' : '＋ 新增账户'}</button>}
+        </h2>
+        {showAccountForm && me.role === 'admin' && <AccountForm onCreated={() => { setShowAccountForm(false); onChanged() }} />}
         {accounts.filter((a) => !a.parent_id).map((a) => (
           <div key={a.id}>
             <div className="tx">

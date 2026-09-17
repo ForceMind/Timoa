@@ -182,3 +182,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .ip-title { font-size: 1.15rem; margin: 0 0 8px; font-weight: 700; }
 .ip-desc { color: var(--muted); font-size: 0.88rem; line-height: 1.55; margin: 0 0 18px; }
 .ip-card .btn { margin-bottom: 4px; }
+
+/* 已有账户后的新增账户表单：紧凑地嵌入「我的 → 资金账户」，支持多张卡及投资账户。 */
+.account-form { margin: 10px 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--primary-soft); }
+.account-form .field { margin-bottom: 10px; }

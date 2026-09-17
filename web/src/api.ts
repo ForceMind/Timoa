@@ -453,6 +453,8 @@ export const ACCOUNT_TYPES: Record<string, string> = {
   stored_value: '储值卡',
   credit_card: '信用卡',
   huabei: '花呗',
+  stock: '股票',
+  fund: '基金',
   other_asset: '其他资产',
   loan_liability: '借款负债',
 }

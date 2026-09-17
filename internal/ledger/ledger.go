@@ -96,7 +96,7 @@ func (s *Service) CreateAccount(ledgerID, actorID, name, typ string, holderUserI
 	if name == "" {
 		return nil, errf(400, "invalid_input", "account name required")
 	}
-	valid := map[string]bool{"cash": true, "bank_card": true, "wechat_change": true, "alipay_balance": true, "stored_value": true, "credit_card": true, "huabei": true, "other_asset": true, "loan_liability": true}
+	valid := map[string]bool{"cash": true, "bank_card": true, "wechat_change": true, "alipay_balance": true, "stored_value": true, "credit_card": true, "huabei": true, "stock": true, "fund": true, "other_asset": true, "loan_liability": true}
 	if !valid[typ] {
 		return nil, errf(400, "invalid_input", "unknown account type %q", typ)
 	}
