@@ -20,7 +20,7 @@ func TestInvestmentAccountTypes(t *testing.T) {
 			t.Fatalf("%s type=%q, want %q", tc.name, a.Type, tc.typ)
 		}
 		var kind string
-		if err := e.db.QueryRow(`SELECT kind FROM subjects WHERE id=?`, a.SubjectID).Scan(&kind); err != nil {
+		if err := e.db.QueryRow(`SELECT s.kind FROM accounts a JOIN subjects s ON s.id=a.subject_id WHERE a.id=?`, a.ID).Scan(&kind); err != nil {
 			t.Fatalf("%s backing subject: %v", tc.name, err)
 		}
 		wantKind := "asset"
