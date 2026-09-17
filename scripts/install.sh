@@ -7,6 +7,10 @@
 #   bash <(curl -Ls .../install.sh) upgrade          # 升级到最新
 #   bash <(curl -Ls .../install.sh) uninstall        # 卸载（保留数据）
 #
+# 国内加速：用代理前缀拉脚本，并通过环境变量让脚本内的 GitHub 下载也走加速
+#   bash <(curl -Ls https://gh-proxy.org/https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/install.sh)
+#   export XIAOZHANG_GH_PROXY="https://gh-proxy.org/"   # 脚本内 GitHub 资源下载前缀
+#
 # 安装内容：
 #   二进制  /usr/local/bin/xiaozhang
 #   数据    /var/lib/xiaozhang（SQLite + 附件 + 每日备份，权限 0700）
@@ -22,6 +26,20 @@ UNIT="/etc/systemd/system/xiaozhang.service"
 ENV_FILE="/etc/xiaozhang/env"
 ADDR="0.0.0.0:8787"
 USER_NAME="xiaozhang"
+
+# GitHub 加速代理前缀（可选，国内服务器用）。例：XIAOZHANG_GH_PROXY="https://gh-proxy.org/"
+GH_PROXY="${XIAOZHANG_GH_PROXY:-}"
+
+# 对 GitHub 的 release/文件下载应用可选加速前缀。
+# gh-proxy 这类代理对 github.com 采用前缀形式；api.github.com 不支持前缀代理，保留直连。
+gh_url() {
+	local url="$1"
+	if [[ -n "$GH_PROXY" && "$url" == https://github.com/* ]]; then
+		echo "${GH_PROXY}${url}"
+	else
+		echo "$url"
+	fi
+}
 
 c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'; c_reset=$'\033[0m'
 info()  { echo "${c_green}[小账]${c_reset} $*"; }
@@ -59,11 +77,11 @@ install_binary() {
 	local asset="xiaozhang-linux-${arch}"
 	# 保存为原始文件名，sha256sum -c 按 SHA256SUMS 中记录的文件名查找
 	curl -fsSL -o "$tmp/${asset}" \
-		"https://github.com/${REPO}/releases/download/${version}/${asset}" \
+		"$(gh_url "https://github.com/${REPO}/releases/download/${version}/${asset}")" \
 		|| die "下载失败：${version} linux/${arch} 不存在或网络不通"
 	# 有校验和文件则校验
 	if curl -fsSL -o "$tmp/SHA256SUMS" \
-		"https://github.com/${REPO}/releases/download/${version}/SHA256SUMS" 2>/dev/null; then
+		"$(gh_url "https://github.com/${REPO}/releases/download/${version}/SHA256SUMS")" 2>/dev/null; then
 		(cd "$tmp" && grep " ${asset}\$" SHA256SUMS | sha256sum -c -) \
 			|| die "SHA256 校验失败，文件可能被篡改，已中止"
 		info "SHA256 校验通过"

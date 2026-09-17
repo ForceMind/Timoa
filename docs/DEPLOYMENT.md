@@ -19,6 +19,18 @@ bash <(curl -Ls https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/i
 - 指定版本：`bash <(curl -Ls .../install.sh) install v1.0.0`
 - 配置：`/etc/xiaozhang/env`（改后 `systemctl restart xiaozhang`）
 
+### 国内服务器加速
+
+GitHub 直连慢/不通时，用代理前缀拉取脚本，并通过环境变量 `XIAOZHANG_GH_PROXY`
+让脚本下载 Release 二进制也走同一前缀（`api.github.com` 查询版本号保留直连）：
+
+```bash
+export XIAOZHANG_GH_PROXY="https://gh-proxy.org/"
+bash <(curl -Ls https://gh-proxy.org/https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/install.sh)
+```
+
+`XIAOZHANG_GH_PROXY` 需以 `/` 结尾，可替换为任意同类 GitHub 加速前缀。
+
 > 一键方式监听 0.0.0.0:8787 且为明文 HTTP：适合内网/家庭服务器/先试用。
 > 长期公网使用建议套 HTTPS 反代（见下文），并在 `/etc/xiaozhang/env` 开启
 > `XIAOZHANG_SECURE_COOKIES=1`。

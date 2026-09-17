@@ -9,6 +9,14 @@ bash <(curl -Ls https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/i
 ```
 
 一条命令完成安装（预编译二进制 + systemd 服务 + 管理员初始化），访问 `http://<服务器IP>:8787`。
+
+**国内服务器加速**（脚本本身与其下载的二进制均走代理前缀）：
+
+```bash
+export XIAOZHANG_GH_PROXY="https://gh-proxy.org/"
+bash <(curl -Ls https://gh-proxy.org/https://raw.githubusercontent.com/ForceMind/Timoa/main/scripts/install.sh)
+```
+
 升级/卸载/手动部署详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 本地开发
