@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { ACCOUNT_TYPES, api, ApiError, type Me, type OpsAuditItem, type OpsBackup, type OpsStatus, type OpsUserDetail } from './api'
+import { ACCOUNT_TYPES, api, ApiError, type Me, type OpsAuditItem, type OpsBackup, type OpsLogin, type OpsServer, type OpsSession, type OpsStatus, type OpsUserDetail } from './api'
 import { formatCents } from './money'
 
 // opspanel.tsx: 运营面板（随机路径 + 登录 + 平台超管）。
 // 标签页：概览 / 用户（可点详情：账户+流水+冻结+重置密码）/ 备份 / 审计日志。
 
 type LoginProps = { onLogin: (m: Me) => void }
-type Tab = 'overview' | 'users' | 'backups' | 'audit'
+type Tab = 'overview' | 'users' | 'server' | 'backups' | 'audit'
 
 export function OpsPanel({ opsPath, LoginView }: { opsPath: string; LoginView: (p: LoginProps) => ReactElement }) {
   const [status, setStatus] = useState<OpsStatus | null>(null)
@@ -100,7 +100,7 @@ export function OpsPanel({ opsPath, LoginView }: { opsPath: string; LoginView: (
         <p className="admin-note">平台超管后台：可查看用户数据、冻结用户、重置密码、备份与审计。入口为固定随机路径，请妥善保管。</p>
         {err && <div className="alert" role="alert">{err}</div>}
         <div className="ops-tabs" role="tablist">
-          {([['overview', '概览'], ['users', '用户'], ['backups', '备份'], ['audit', '审计']] as [Tab, string][]).map(([k, label]) => (
+          {([['overview', '概览'], ['users', '用户管理'], ['server', '服务器'], ['backups', '备份'], ['audit', '审计日志']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'ops-tab on' : 'ops-tab'} onClick={() => { setTab(k); setSelectedUser(null) }}>{label}</button>
           ))}
         </div>
@@ -163,6 +163,7 @@ export function OpsPanel({ opsPath, LoginView }: { opsPath: string; LoginView: (
         </div>
       )}
 
+      {tab === 'server' && <Server opsPath={opsPath} />}
       {tab === 'backups' && <Backups opsPath={opsPath} />}
       {tab === 'audit' && <AuditLog opsPath={opsPath} />}
     </div>
@@ -173,6 +174,7 @@ function UserDetail({ opsPath, userID, onBack, onChanged }: { opsPath: string; u
   const [d, setD] = useState<OpsUserDetail | null>(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [sub, setSub] = useState<'accounts' | 'txs' | 'logins' | 'sessions'>('accounts')
 
   const load = useCallback(async () => {
     try {
@@ -221,31 +223,48 @@ function UserDetail({ opsPath, userID, onBack, onChanged }: { opsPath: string; u
         <button className="btn-text" disabled={busy} onClick={resetPassword}>重置密码</button>
       </div>
 
-      <h2>账户（{d.accounts.filter((a) => !a.parent_id).length}）</h2>
-      {d.accounts.filter((a) => !a.parent_id).length === 0 && <p className="empty">暂无账户</p>}
-      {d.accounts.filter((a) => !a.parent_id).map((a) => (
-        <div key={a.id} className="tx">
-          <div className="icon">{ACCOUNT_TYPES[a.type]?.slice(0, 1) ?? '账'}</div>
-          <div className="main">
-            <div className="title">{a.name}</div>
-            <div className="meta">{ACCOUNT_TYPES[a.type] ?? a.type}{a.archived ? ' · 已归档' : ''}</div>
-          </div>
-          <div className="amt">{formatCents(a.balance_cents)}</div>
-        </div>
-      ))}
+      <div className="ops-tabs" style={{ marginTop: 8 }}>
+        {([['accounts', '账户'], ['txs', '流水'], ['logins', '访问记录'], ['sessions', '在线会话']] as [typeof sub, string][]).map(([k, label]) => (
+          <button key={k} className={sub === k ? 'ops-tab on' : 'ops-tab'} onClick={() => setSub(k)}>{label}</button>
+        ))}
+      </div>
 
-      <h2 style={{ marginTop: 16 }}>流水（最近 {d.transactions.length} 笔）</h2>
-      {d.transactions.length === 0 && <p className="empty">暂无流水</p>}
-      {d.transactions.map((t) => (
-        <div key={t.id} className="tx">
-          <div className="icon">{t.type === 'expense' ? '支' : t.type === 'income' ? '收' : '转'}</div>
-          <div className="main">
-            <div className="title">{t.category_name ?? (t.type === 'transfer' ? '转账' : '未分类')}</div>
-            <div className="meta">{t.business_date}{t.from_account_name ? ` · ${t.from_account_name}` : ''}{t.to_account_name ? ` → ${t.to_account_name}` : ''}{t.note ? ` · ${t.note}` : ''}</div>
-          </div>
-          <div className={`amt ${t.type === 'income' ? 'income' : ''}`}>{t.type === 'expense' ? '-' : ''}{formatCents(t.amount_cents)}</div>
-        </div>
-      ))}
+      {sub === 'accounts' && (
+        <>
+          <h2 style={{ marginTop: 12 }}>账户（{d.accounts.filter((a) => !a.parent_id).length}）</h2>
+          {d.accounts.filter((a) => !a.parent_id).length === 0 && <p className="empty">暂无账户</p>}
+          {d.accounts.filter((a) => !a.parent_id).map((a) => (
+            <div key={a.id} className="tx">
+              <div className="icon">{ACCOUNT_TYPES[a.type]?.slice(0, 1) ?? '账'}</div>
+              <div className="main">
+                <div className="title">{a.name}</div>
+                <div className="meta">{ACCOUNT_TYPES[a.type] ?? a.type}{a.archived ? ' · 已归档' : ''}</div>
+              </div>
+              <div className="amt">{formatCents(a.balance_cents)}</div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {sub === 'txs' && (
+        <>
+          <h2 style={{ marginTop: 12 }}>流水（最近 {d.transactions.length} 笔）</h2>
+          {d.transactions.length === 0 && <p className="empty">暂无流水</p>}
+          {d.transactions.map((t) => (
+            <div key={t.id} className="tx">
+              <div className="icon">{t.type === 'expense' ? '支' : t.type === 'income' ? '收' : '转'}</div>
+              <div className="main">
+                <div className="title">{t.category_name ?? (t.type === 'transfer' ? '转账' : '未分类')}</div>
+                <div className="meta">{t.business_date}{t.from_account_name ? ` · ${t.from_account_name}` : ''}{t.to_account_name ? ` → ${t.to_account_name}` : ''}{t.note ? ` · ${t.note}` : ''}</div>
+              </div>
+              <div className={`amt ${t.type === 'income' ? 'income' : ''}`}>{t.type === 'expense' ? '-' : ''}{formatCents(t.amount_cents)}</div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {sub === 'logins' && <UserLogins opsPath={opsPath} userID={userID} />}
+      {sub === 'sessions' && <UserSessions opsPath={opsPath} userID={userID} />}
     </>
   )
 }
@@ -323,5 +342,142 @@ function AuditLog({ opsPath }: { opsPath: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+function UserLogins({ opsPath, userID }: { opsPath: string; userID: string }) {
+  const [logins, setLogins] = useState<OpsLogin[]>([])
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.opsUserLogins(opsPath, userID)
+        setLogins(r.logins)
+      } catch (e) { setErr((e as ApiError).message) }
+    })()
+  }, [opsPath, userID])
+  return (
+    <>
+      <h2 style={{ marginTop: 12 }}>访问记录（最近 {logins.length} 条）</h2>
+      {err && <div className="alert" role="alert">{err}</div>}
+      {logins.length === 0 && <p className="empty">暂无访问记录</p>}
+      {logins.map((l, i) => (
+        <div key={i} className="admin-reg" style={{ alignItems: 'flex-start' }}>
+          <span>
+            <span className={l.action === 'login' ? 'badge' : 'badge badge-danger'}>{l.action === 'login' ? '登录' : '登出'}</span>
+            {' '}{l.ip || '未知 IP'}
+            <div className="admin-user-meta">{l.device} · {l.os} · {l.browser}</div>
+          </span>
+          <span style={{ whiteSpace: 'nowrap' }}>{l.created_at.slice(0, 19).replace('T', ' ')}</span>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function UserSessions({ opsPath, userID }: { opsPath: string; userID: string }) {
+  const [sessions, setSessions] = useState<OpsSession[]>([])
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api.opsUserSessions(opsPath, userID)
+      setSessions(r.sessions)
+    } catch (e) { setErr((e as ApiError).message) }
+  }, [opsPath, userID])
+
+  useEffect(() => { void load() }, [load])
+
+  async function revoke(id: string) {
+    if (!confirm('强制下线该会话？')) return
+    try {
+      await api.opsRevokeSession(opsPath, id)
+      await load()
+    } catch (e) { setErr((e as ApiError).message) }
+  }
+
+  return (
+    <>
+      <h2 style={{ marginTop: 12 }}>会话（最近 {sessions.length} 条）</h2>
+      {err && <div className="alert" role="alert">{err}</div>}
+      {sessions.length === 0 && <p className="empty">暂无会话</p>}
+      {sessions.map((s) => (
+        <div key={s.id} className="admin-reg" style={{ alignItems: 'flex-start' }}>
+          <span>
+            {s.live ? <span className="badge">在线</span> : <span className="badge badge-danger">已失效</span>}
+            {' '}{s.ip || '未知 IP'}
+            <div className="admin-user-meta">{s.device} · {s.os} · {s.browser} · {s.created_at.slice(0, 19).replace('T', ' ')}</div>
+          </span>
+          {s.live && <button className="btn-text" onClick={() => revoke(s.id)}>下线</button>}
+        </div>
+      ))}
+    </>
+  )
+}
+
+function Server({ opsPath }: { opsPath: string }) {
+  const [s, setS] = useState<OpsServer | null>(null)
+  const [svc, setSvc] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    try {
+      setS(await api.opsServer(opsPath))
+      setErr('')
+    } catch (e) { setErr((e as ApiError).message) }
+  }, [opsPath])
+
+  useEffect(() => {
+    void load()
+    const t = setInterval(() => void load(), 5000)
+    return () => clearInterval(t)
+  }, [load])
+
+  async function action(a: 'restart' | 'stop' | 'status') {
+    if (a !== 'status' && !confirm(a === 'restart' ? '重启服务？期间会有几秒不可用，稍后请刷新页面。' : '停止服务？服务将不可用，需到服务器手动启动。')) return
+    setBusy(true)
+    try {
+      const r = await api.opsServiceAction(opsPath, a)
+      if (a === 'status') {
+        setSvc(r.status ?? '')
+      } else {
+        window.alert(r.note ?? '已下发')
+      }
+    } catch (e) { setErr((e as ApiError).message) } finally { setBusy(false) }
+  }
+
+  if (!s) return <div className="panel"><p className="empty">{err || '加载中…'}</p></div>
+
+  return (
+    <>
+      <div className="panel">
+        <h2>服务器运行状态 <span className="more">每 5 秒刷新</span></h2>
+        {err && <div className="alert" role="alert">{err}</div>}
+        <div className="stat-grid">
+          <div className="stat-cell"><div className="stat-value">{s.mem_alloc_mb}</div><div className="stat-label">内存 (MB)</div></div>
+          <div className="stat-cell"><div className="stat-value">{s.goroutines}</div><div className="stat-label">协程</div></div>
+          <div className="stat-cell"><div className="stat-value">{s.db_size_mb}</div><div className="stat-label">数据库 (MB)</div></div>
+          <div className="stat-cell"><div className="stat-value">{s.disk_avail_gb.toFixed(1)}</div><div className="stat-label">磁盘可用 (GB)</div></div>
+        </div>
+        <div className="admin-reg"><span>系统</span><span>{s.goos}/{s.goarch} · {s.num_cpu} 核 · {s.go_version}</span></div>
+        <div className="admin-reg"><span>磁盘</span><span>共 {s.disk_total_gb.toFixed(1)} GB，可用 {s.disk_avail_gb.toFixed(1)} GB</span></div>
+        {s.load_avg && <div className="admin-reg"><span>负载</span><span>{s.load_avg}</span></div>}
+        {s.uptime && <div className="admin-reg"><span>系统运行</span><span>{s.uptime.split(' ')[0]} 秒</span></div>}
+        <div className="admin-reg"><span>数据库</span><span>{s.db_path}</span></div>
+        <div className="admin-reg"><span>服务器时间</span><span>{s.time.slice(0, 19).replace('T', ' ')} UTC</span></div>
+      </div>
+
+      <div className="panel">
+        <h2>服务控制</h2>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-text" disabled={busy} onClick={() => action('status')}>查看服务状态</button>
+          <button className="btn-text" disabled={busy} onClick={() => action('restart')}>重启服务</button>
+          <button className="btn-text" disabled={busy} onClick={() => action('stop')}>停止服务</button>
+        </div>
+        {svc && <pre className="admin-note" style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{svc}</pre>}
+        <p className="admin-note">重启/停止通过 systemd 下发。停止后需到服务器执行 <code>systemctl start xiaozhang</code> 恢复。</p>
+      </div>
+    </>
   )
 }

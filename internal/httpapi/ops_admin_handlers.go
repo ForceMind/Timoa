@@ -25,6 +25,7 @@ func (s *server) registerOpsAdminRoutes(mux *http.ServeMux, opsPath string) {
 	mux.Handle("GET "+base+"backups", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.opsListBackups))))
 	mux.Handle("POST "+base+"backups", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.opsCreateBackup))))
 	mux.Handle("GET "+base+"audit", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.opsAuditLog))))
+	s.registerOpsAdmin2Routes(mux, opsPath)
 }
 
 // opsAudit 记录平台级运维操作到 audit_log（挂在一个固定 system 账本行上不可行，

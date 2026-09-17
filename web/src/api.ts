@@ -91,6 +91,46 @@ export interface OpsAuditItem {
   detail: string
 }
 
+export interface OpsLogin {
+  action: string
+  ip: string
+  user_agent: string
+  device: string
+  os: string
+  browser: string
+  created_at: string
+}
+
+export interface OpsSession {
+  id: string
+  ip: string
+  user_agent: string
+  device: string
+  os: string
+  browser: string
+  created_at: string
+  expires_at: string
+  revoked: boolean
+  live: boolean
+}
+
+export interface OpsServer {
+  go_version: string
+  goroutines: number
+  num_cpu: number
+  goos: string
+  goarch: string
+  mem_alloc_mb: number
+  mem_sys_mb: number
+  db_size_mb: number
+  db_path: string
+  disk_total_gb: number
+  disk_avail_gb: number
+  load_avg: string
+  uptime: string
+  time: string
+}
+
 export interface Account {
   id: string
   name: string
@@ -173,6 +213,13 @@ export const api = {
   opsCreateBackup: (opsPath: string) =>
     req<{ ok: boolean; name: string; size: number }>(`/${opsPath}/api/backups`, { method: 'POST', body: JSON.stringify({}) }),
   opsAudit: (opsPath: string) => req<{ audit: OpsAuditItem[] }>(`/${opsPath}/api/audit`),
+  opsUserLogins: (opsPath: string, userID: string) => req<{ logins: OpsLogin[] }>(`/${opsPath}/api/user/${userID}/logins`),
+  opsUserSessions: (opsPath: string, userID: string) => req<{ sessions: OpsSession[] }>(`/${opsPath}/api/user/${userID}/sessions`),
+  opsRevokeSession: (opsPath: string, sessionID: string) =>
+    req<{ ok: boolean }>(`/${opsPath}/api/session/${sessionID}/revoke`, { method: 'POST', body: JSON.stringify({}) }),
+  opsServer: (opsPath: string) => req<OpsServer>(`/${opsPath}/api/server`),
+  opsServiceAction: (opsPath: string, action: 'restart' | 'stop' | 'status') =>
+    req<{ ok?: boolean; status?: string; note?: string }>(`/${opsPath}/api/service/${action}`, { method: 'POST', body: JSON.stringify({}) }),
   accounts: () => req<{ accounts: Account[] }>('/api/v1/accounts'),
   createAccount: (b: { name: string; type: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),

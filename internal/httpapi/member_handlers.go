@@ -100,11 +100,12 @@ func (s *server) join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limiter.Success(key)
-	token, err := auth.CreateSession(s.db, userID, r.UserAgent())
+	token, err := auth.CreateSession(s.db, userID, r.UserAgent(), clientIP(r))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	auth.RecordLogin(s.db, userID, "login", clientIP(r), r.UserAgent())
 	s.setSessionCookie(w, r, token)
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID})
 }

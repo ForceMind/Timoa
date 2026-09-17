@@ -219,17 +219,21 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.limiter.Success(key)
 
-	token, err := auth.CreateSession(s.db, userID, r.UserAgent())
+	token, err := auth.CreateSession(s.db, userID, r.UserAgent(), clientIP(r))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	auth.RecordLogin(s.db, userID, "login", clientIP(r), r.UserAgent())
 	s.setSessionCookie(w, r, token)
 	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "display_name": displayName})
 }
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		if sess, err2 := auth.LookupSession(s.db, c.Value); err2 == nil {
+			auth.RecordLogin(s.db, sess.UserID, "logout", clientIP(r), r.UserAgent())
+		}
 		_ = auth.RevokeSession(s.db, c.Value)
 	}
 	s.clearSessionCookie(w, r)

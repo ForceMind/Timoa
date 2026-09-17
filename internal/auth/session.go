@@ -44,11 +44,11 @@ func sessionID(token string) string {
 
 // CreateSession persists a new session and returns the bearer token
 // (only ever transported via the HttpOnly cookie).
-func CreateSession(db *sql.DB, userID, userAgent string) (token string, err error) {
+func CreateSession(db *sql.DB, userID, userAgent, ip string) (token string, err error) {
 	token = ids.Token(32)
 	exp := time.Now().UTC().Add(SessionTTL).Format("2006-01-02T15:04:05.000Z")
-	_, err = db.Exec(`INSERT INTO sessions(id,user_id,expires_at,user_agent) VALUES(?,?,?,?)`,
-		sessionID(token), userID, exp, userAgent)
+	_, err = db.Exec(`INSERT INTO sessions(id,user_id,expires_at,user_agent,ip) VALUES(?,?,?,?,?)`,
+		sessionID(token), userID, exp, userAgent, ip)
 	return token, err
 }
 
