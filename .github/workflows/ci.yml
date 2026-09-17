@@ -1,0 +1,48 @@
+name: ci
+
+# 每次 push / PR 到 main 时跑前端类型检查 + 构建 + 后端测试，不发版。
+# 发布走 release.yml（v* tag 触发）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: go.sum
+
+      - name: 前端类型检查 + 构建
+        run: |
+          cd web
+          npm ci
+          npx tsc --noEmit
+          npm run build
+
+      - name: 嵌入前端产物
+        run: |
+          mkdir -p internal/webdist/dist
+          find internal/webdist/dist -mindepth 1 -delete
+          cp -r web/dist/* internal/webdist/dist/
+
+      - name: 后端测试
+        run: go test ./...
+
+      - name: 后端可编译（嵌入校验）
+        run: CGO_ENABLED=0 go build ./cmd/xiaozhang
