@@ -60,9 +60,36 @@ func main() {
 		case "admin":
 			cmdAdmin(os.Args[2:])
 			return
+		case "help", "--help", "-h":
+			printUsage()
+			return
 		}
 	}
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", os.Args[1])
+		printUsage()
+		os.Exit(2)
+	}
 	cmdServe(os.Args[1:])
+}
+
+func printUsage() {
+	fmt.Print(`小账 xiaozhang — 单文件记账服务与运维工具
+
+用法:
+  xiaozhang serve              启动服务（默认）
+  xiaozhang admin              终端交互式运维面板（统计/用户/冻结/重置密码/备份/注册开关）
+  xiaozhang panel              打印 Web 后台入口地址
+  xiaozhang init-admin         初始化管理员
+  xiaozhang reset-password     重置用户密码
+  xiaozhang make-superadmin    提升平台超管
+  xiaozhang backup             备份数据库
+  xiaozhang restore            恢复数据库
+  xiaozhang version            版本
+
+常用:
+  xiaozhang admin              直接在终端管理（自动读 /etc/xiaozhang/env）
+`)
 }
 
 // cmdPanel 打印运营面板的随机入口 URL（首次运行生成路径并持久化）。

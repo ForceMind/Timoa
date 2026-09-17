@@ -24,21 +24,23 @@ import (
 
 // cmdAdmin 进入交互式终端运维面板。
 // 用法: xiaozhang admin [-data <数据目录>]
+// 数据目录解析优先级：-data 参数 > 环境变量 XIAOZHANG_DATA_DIR > /etc/xiaozhang/env > ./data。
 func cmdAdmin(args []string) {
 	fs := flag.NewFlagSet("admin", flag.ExitOnError)
-	data := fs.String("data", config.Getenv("XIAOZHANG_DATA_DIR", "./data"), "data directory")
+	data := fs.String("data", "", "data directory")
 	_ = fs.Parse(args)
+	dataDir := resolveDataDir(*data)
 
-	db, err := openDBFull(*data)
+	db, err := openDBFull(dataDir)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
 	defer db.Close()
 	svc := ledger.NewService(db)
-	a := &adminUI{db: db, svc: svc, dataDir: *data, r: bufio.NewReader(os.Stdin)}
+	a := &adminUI{db: db, svc: svc, dataDir: dataDir, r: bufio.NewReader(os.Stdin)}
 
 	fmt.Println("\n=== 小账 终端运维面板 ===")
-	fmt.Printf("数据目录: %s\n\n", *data)
+	fmt.Printf("数据目录: %s\n\n", dataDir)
 	for {
 		fmt.Println("------------------------------")
 		fmt.Println(" 1) 全局统计")
@@ -322,4 +324,26 @@ func (a *adminUI) primaryLedger(userID string) string {
 		_ = a.db.QueryRow(`SELECT ledger_id FROM ledger_members WHERE user_id=? LIMIT 1`, userID).Scan(&id)
 	}
 	return id
+}
+
+// resolveDataDir 解析数据目录。显式 -data 优先；其次环境变量；再次尝试读
+// systemd env 文件 /etc/xiaozhang/env（install.sh 部署）；最后回退 ./data。
+func resolveDataDir(flagVal string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	if v := os.Getenv("XIAOZHANG_DATA_DIR"); v != "" {
+		return v
+	}
+	if b, err := os.ReadFile("/etc/xiaozhang/env"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "XIAOZHANG_DATA_DIR=") {
+				if v := strings.TrimSpace(strings.TrimPrefix(line, "XIAOZHANG_DATA_DIR=")); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return "./data"
 }
