@@ -182,9 +182,20 @@ health_check() {
 
 do_install() {
 	local version="${1:-}"
+	local was_active=0
+	# 记录安装前服务是否已在运行（决定装完要 restart 还是 start）
+	if systemctl is-active --quiet xiaozhang 2>/dev/null; then
+		was_active=1
+	fi
 	install_binary "$version"
 	ensure_user_dirs
 	write_unit
+	# 关键：替换二进制后必须让进程加载新版本。
+	# 已运行 → restart 才会换新二进制；未运行 → enable --now 已启动。
+	if [[ "$was_active" == "1" ]]; then
+		info "检测到服务运行中，重启以加载新版本..."
+		systemctl restart xiaozhang
+	fi
 	health_check || true
 	init_admin
 	echo
@@ -200,9 +211,9 @@ do_install() {
 
 do_upgrade() {
 	[[ -x "$BIN" ]] || die "未检测到已安装的小账，请直接运行 install"
-	systemctl stop xiaozhang || true
 	install_binary "${1:-}"
-	systemctl start xiaozhang
+	# restart 原子加载新二进制（服务未运行时等价于启动）
+	systemctl restart xiaozhang
 	health_check && info "升级完成"
 }
 
