@@ -41,6 +41,9 @@ func main() {
 		case "reset-password":
 			cmdResetPassword(os.Args[2:])
 			return
+		case "make-superadmin":
+			cmdMakeSuperadmin(os.Args[2:])
+			return
 		case "serve":
 			cmdServe(os.Args[2:])
 			return
@@ -131,6 +134,31 @@ func cmdResetPassword(args []string) {
 		log.Fatalf("reset password: %v", err)
 	}
 	fmt.Println("password updated; previous sessions revoked")
+}
+
+// cmdMakeSuperadmin promotes a user to platform superadmin (server-local).
+// Platform superadmin sees only cross-user stats/metadata, never ledger details.
+func cmdMakeSuperadmin(args []string) {
+	fs := flag.NewFlagSet("make-superadmin", flag.ExitOnError)
+	data := fs.String("data", config.Getenv("XIAOZHANG_DATA_DIR", "./data"), "data directory")
+	username := fs.String("username", "", "username (required)")
+	_ = fs.Parse(args)
+	if *username == "" {
+		log.Fatal("-username is required")
+	}
+	db, err := openDBFull(*data)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	res, err := db.Exec(`UPDATE users SET platform_role='superadmin' WHERE username=?`, *username)
+	if err != nil {
+		log.Fatalf("make superadmin: %v", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		log.Fatalf("user not found: %s", *username)
+	}
+	fmt.Printf("user %s is now platform superadmin\n", *username)
 }
 
 // cmdBackup 手动一致性备份。加密口令来自 XIAOZHANG_BACKUP_KEY。

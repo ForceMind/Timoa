@@ -25,3 +25,7 @@ Thumbs.db
 internal/webdist/dist/assets/
 build/
 data/
+
+# Reasonix 工具产物
+.reasonix/
+reasonix.toml

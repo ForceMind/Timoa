@@ -9,6 +9,8 @@ import { formatCents, parseYuan, parseYuanAllowZero } from './money'
 import { StatsView } from './stats'
 import { sync, type SyncState } from './sync'
 import { exportOutbox } from './db'
+import { Landing } from './landing'
+import { AdminPanel } from './admin'
 import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
 import { installState, promptInstall, subscribeInstall, type InstallState } from './pwa'
 
@@ -18,6 +20,7 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [booting, setBooting] = useState(true)
   const [joinToken] = useState(() => new URLSearchParams(window.location.search).get('join'))
+  const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
     api.me().then(setMe).catch(() => setMe(null)).finally(() => setBooting(false))
@@ -26,7 +29,8 @@ export default function App() {
   if (booting) return <div className="shell"><p className="empty">加载中…</p></div>
   if (!me) {
     if (joinToken) return <JoinView token={joinToken} onJoined={setMe} />
-    return <Login onLogin={setMe} />
+    if (showLogin) return <Login onLogin={setMe} onBack={() => setShowLogin(false)} />
+    return <Landing onLogin={setMe} onGoLogin={() => setShowLogin(true)} />
   }
   return <Main me={me} onLogout={() => setMe(null)} />
 }
@@ -69,7 +73,7 @@ function JoinView({ token, onJoined }: { token: string; onJoined: (m: Me) => voi
   )
 }
 
-function Login({ onLogin }: { onLogin: (m: Me) => void }) {
+function Login({ onLogin, onBack }: { onLogin: (m: Me) => void; onBack?: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
@@ -102,6 +106,7 @@ function Login({ onLogin }: { onLogin: (m: Me) => void }) {
         <div className="field"><label htmlFor="p">密码</label>
           <input id="p" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></div>
         <button className="btn" disabled={busy}>{busy ? '登录中…' : '登录'}</button>
+        {onBack && <button type="button" className="btn-text" onClick={onBack}>返回首页</button>}
       </form>
     </div>
   )
@@ -467,7 +472,7 @@ function TxsView({ txs, onOpen }: { txs: Tx[]; onOpen: (id: string) => void }) {
 function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
   me: Me; accounts: Account[]; expenseCats: Category[]; onLogout: () => void; onChanged: () => void
 }) {
-  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings' | 'notes' | 'amort'>('')
+  const [manage, setManage] = useState<'' | 'templates' | 'rules' | 'data' | 'members' | 'settings' | 'notes' | 'amort' | 'platform'>('')
   const [syncState, setSyncState] = useState<SyncState>({ status: 'disabled', pending: 0 })
   const [offlineOn, setOfflineOn] = useState(false)
   const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref())
@@ -576,7 +581,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
       </div>
       <div className="panel">
         <h2>管理</h2>
-        <div className="chips" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
+        <div className="chips" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))' }}>
           <button className="chip" onClick={() => setManage(manage === 'members' ? '' : 'members')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>👪</span><span>成员</span>
           </button>
@@ -598,8 +603,14 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
           <button className="chip" onClick={() => setManage(manage === 'settings' ? '' : 'settings')}>
             <span className="ic" style={{ background: 'var(--primary-soft)' }}>⚙️</span><span>设置</span>
           </button>
+          {me.platform_role === 'superadmin' && (
+            <button className="chip" onClick={() => setManage(manage === 'platform' ? '' : 'platform')}>
+              <span className="ic" style={{ background: 'var(--primary-soft)' }}>🛡️</span><span>平台</span>
+            </button>
+          )}
         </div>
       </div>
+      {manage === 'platform' && me.platform_role === 'superadmin' && <AdminPanel onClose={() => setManage('')} />}
       {manage === 'members' && <MembersPanel meID={me.user_id} isAdmin={me.role === 'admin'} onChanged={onChanged} />}
       {manage === 'templates' && <TemplatesPanel onChanged={onChanged} />}
       {manage === 'rules' && <RulesPanel expenseCats={expenseCats} onChanged={onChanged} />}

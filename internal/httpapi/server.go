@@ -34,8 +34,16 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.HandleFunc("GET /api/v1/setup/status", s.setupStatus)
 
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("POST /api/v1/auth/register", s.register)
+	mux.HandleFunc("GET /api/v1/auth/registration-status", s.registrationStatus)
 	mux.Handle("POST /api/v1/auth/logout", s.requireAuth(http.HandlerFunc(s.logout)))
 	mux.Handle("GET /api/v1/auth/me", s.requireAuth(http.HandlerFunc(s.me)))
+
+	// 平台超管后台（platform_role='superadmin'，服务端强制；仅元数据/统计）
+	mux.Handle("GET /api/v1/platform/overview", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformOverview))))
+	mux.Handle("POST /api/v1/platform/users/{id}/archive", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformSetUserArchived))))
+	mux.Handle("POST /api/v1/platform/users/{id}/reset-password", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformResetPassword))))
+	mux.Handle("POST /api/v1/platform/registration", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformSetRegistration))))
 
 	mux.Handle("GET /api/v1/accounts", s.requireAuth(http.HandlerFunc(s.listAccounts)))
 	mux.Handle("POST /api/v1/accounts", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createAccount))))
@@ -229,14 +237,15 @@ func (s *server) me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	var displayName, username string
-	if err := s.db.QueryRow(`SELECT username,display_name FROM users WHERE id=?`, sess.UserID).Scan(&username, &displayName); err != nil {
+	var displayName, username, platformRole string
+	if err := s.db.QueryRow(`SELECT username,display_name,platform_role FROM users WHERE id=?`, sess.UserID).Scan(&username, &displayName, &platformRole); err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": sess.UserID, "username": username, "display_name": displayName,
 		"ledger_id": m.ledgerID, "ledger_name": m.ledgerName, "role": m.role,
+		"platform_role": platformRole,
 	})
 }
 

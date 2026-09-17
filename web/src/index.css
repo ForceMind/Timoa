@@ -138,3 +138,39 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 @media (min-width: 900px) {
   .shell { max-width: 720px; }
 }
+
+/* 官网落地页（未登录首屏） */
+.landing { max-width: 720px; margin: 0 auto; padding: 0 20px 48px; }
+.landing-hero { text-align: center; padding: 9vh 0 8px; }
+.landing-logo { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 8px 24px rgb(34 140 101 / 20%); }
+.landing-hero h1 { font-size: 1.9rem; margin: 16px 0 6px; font-weight: 700; }
+.landing-slogan { font-size: 1.1rem; color: var(--ink); margin: 0 0 4px; }
+.landing-sub { color: var(--muted); margin: 0 0 26px; font-size: 0.92rem; }
+.landing-actions { display: flex; flex-direction: column; gap: 10px; max-width: 300px; margin: 0 auto; }
+.btn-ghost { background: var(--card); color: var(--primary-dark); border: 1px solid var(--line); }
+.btn-ghost:active { background: var(--primary-soft); }
+.landing-features { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 40px; }
+@media (min-width: 640px) { .landing-features { grid-template-columns: repeat(3, 1fr); } }
+.feature { background: var(--card); border-radius: 16px; padding: 18px 14px; box-shadow: 0 1px 3px rgb(23 37 31 / 5%); }
+.feature-icon { font-size: 1.6rem; margin-bottom: 8px; }
+.feature-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+.feature-desc { color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.landing-foot { text-align: center; color: var(--muted); font-size: 0.72rem; letter-spacing: 2px; margin-top: 44px; }
+
+/* 平台超管后台 */
+.admin-note { color: var(--muted); font-size: 0.8rem; margin: 0 0 12px; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.stat-cell { background: var(--primary-soft); border-radius: 12px; padding: 14px 8px; text-align: center; }
+.stat-value { font-size: 1.4rem; font-weight: 700; color: var(--primary-dark); }
+.stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.admin-reg { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.admin-user { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.admin-user:last-child { border-bottom: none; }
+.admin-user.frozen { opacity: 0.55; }
+.admin-user-main { min-width: 0; }
+.admin-user-name { font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.admin-user-uid { color: var(--muted); font-weight: 400; font-size: 0.82rem; }
+.admin-user-meta { color: var(--muted); font-size: 0.78rem; margin-top: 3px; }
+.admin-user-ops { display: flex; gap: 2px; flex-shrink: 0; }
+.badge { background: var(--primary-soft); color: var(--primary-dark); font-size: 0.68rem; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+.badge-danger { background: var(--danger-soft); color: var(--danger-ink); }

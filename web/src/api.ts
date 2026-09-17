@@ -32,6 +32,29 @@ export interface Me {
   ledger_id: string
   ledger_name: string
   role: 'admin' | 'member'
+  platform_role?: 'user' | 'superadmin'
+}
+
+export interface PlatformStats {
+  user_count: number
+  ledger_count: number
+  tx_count: number
+}
+
+export interface PlatformUser {
+  user_id: string
+  username: string
+  display_name: string
+  platform_role: string
+  created_at: string
+  archived: boolean
+  ledger_count: number
+  tx_count: number
+}
+
+export interface PlatformOverview {
+  stats: PlatformStats
+  users: PlatformUser[]
 }
 
 export interface Account {
@@ -87,6 +110,16 @@ export const api = {
     req<{ user_id: string }>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => req<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
   me: () => req<Me>('/api/v1/auth/me'),
+  register: (b: { username: string; password: string; display_name?: string }) =>
+    req<{ user_id: string }>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify(b) }),
+  registrationStatus: () => req<{ registration_open: boolean }>('/api/v1/auth/registration-status'),
+  platformOverview: () => req<PlatformOverview>('/api/v1/platform/overview'),
+  platformSetArchived: (id: string, archived: boolean) =>
+    req<{ ok: boolean }>(`/api/v1/platform/users/${id}/archive`, { method: 'POST', body: JSON.stringify({ archived }) }),
+  platformResetPassword: (id: string, password: string) =>
+    req<{ ok: boolean }>(`/api/v1/platform/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
+  platformSetRegistration: (open: boolean) =>
+    req<{ registration_open: boolean }>('/api/v1/platform/registration', { method: 'POST', body: JSON.stringify({ open }) }),
   accounts: () => req<{ accounts: Account[] }>('/api/v1/accounts'),
   createAccount: (b: { name: string; type: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),
