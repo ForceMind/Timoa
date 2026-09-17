@@ -85,7 +85,18 @@ func cmdPanel(args []string) {
 	if strings.HasPrefix(host, "0.0.0.0") {
 		host = "127.0.0.1" + strings.TrimPrefix(host, "0.0.0.0")
 	}
-	fmt.Printf("\n小账运营面板入口（固定随机路径，登录后可见）:\n\n  http://%s/%s\n\n请妥善保管该地址；泄露后可在面板内「重新生成路径」。\n\n", host, opsPath)
+	fmt.Printf("\n小账运营面板入口（固定随机路径，登录后可见）:\n\n  http://%s/%s\n\n", host, opsPath)
+	// 首次部署生成的初始超管凭据（若文件仍在），随面板入口一并提示
+	if creds, err := os.ReadFile(filepath.Join(*data, "initial-admin.txt")); err == nil {
+		fmt.Printf("初始平台超管凭据（首次部署生成，建议登录后修改密码并删除该文件）:\n\n%s\n", strings.TrimSpace(string(creds)))
+	}
+	fmt.Printf("请妥善保管入口地址；泄露后可在面板内「重新生成路径」。\n\n")
+}
+
+// writeInitialAdminCreds 把首次部署的超管凭据写入 <dataDir>/initial-admin.txt（0600）。
+func writeInitialAdminCreds(dataDir, username, password string) error {
+	content := fmt.Sprintf("  用户名: %s\n  密码:   %s\n", username, password)
+	return os.WriteFile(filepath.Join(dataDir, "initial-admin.txt"), []byte(content), 0o600)
 }
 
 // openDBFull opens the database and applies pending migrations.
@@ -340,6 +351,18 @@ func cmdServe(args []string) {
 
 	if err := ledger.EnsureSeeds(db); err != nil {
 		log.Fatalf("seed library: %v", err)
+	}
+
+	// 首次部署/老库升级：无任何平台超管时自动创建一个（admin + 随机密码），
+	// 凭据只写入 <data>/initial-admin.txt（0600），不进日志（密钥不进日志约定）。
+	if created, uname, pwd, err := ledger.NewService(db).EnsurePlatformSuperadmin(); err != nil {
+		log.Printf("ensure platform superadmin: %v", err)
+	} else if created {
+		if perr := writeInitialAdminCreds(cfg.DataDir, uname, pwd); perr != nil {
+			log.Printf("write initial admin credentials: %v", perr)
+		} else {
+			log.Printf("platform superadmin created: %s (credentials in %s)", uname, filepath.Join(cfg.DataDir, "initial-admin.txt"))
+		}
 	}
 
 	// 周期扫描：启动补查遗漏（幂等），之后每日扫描；状态在数据库，

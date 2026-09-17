@@ -206,6 +206,10 @@ do_install() {
 	echo "  数据目录: ${DATA_DIR}（每日自动备份，保留 14 份）"
 	echo "  配置文件: ${ENV_FILE}"
 	echo "  常用命令: systemctl status|restart xiaozhang；journalctl -u xiaozhang -f"
+	echo
+	# 首次部署已自动生成平台超管（initial-admin.txt）+ 随机后台路径，直接展示入口与凭据
+	sudo -u "$USER_NAME" env XIAOZHANG_DATA_DIR="$DATA_DIR" XIAOZHANG_ADDR="${XIAOZHANG_ADDR:-127.0.0.1:8787}" \
+		"$BIN" panel -data "$DATA_DIR" -addr "${XIAOZHANG_ADDR:-127.0.0.1:8787}" 2>/dev/null || true
 	warn "提示：默认未开防火墙放行，如需公网访问请放行 8787 端口（如 ufw allow 8787）"
 }
 

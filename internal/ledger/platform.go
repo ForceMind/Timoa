@@ -65,6 +65,66 @@ func (s *Service) RegenerateOpsPath() (string, error) {
 	return v, err
 }
 
+// EnsurePlatformSuperadmin 确保系统至少有一个平台超管：若一个都不存在（含老库升级、
+// 以及首次部署），自动创建用户名 admin、随机强密码的超管账号，并配独立账本与种子。
+// 返回 created=true 及明文密码（仅此一次，由调用方写入 0600 凭据文件，不进日志）。
+// 若已存在任一超管，返回 created=false（不改动、不重复创建）。
+func (s *Service) EnsurePlatformSuperadmin() (created bool, username, password string, err error) {
+	var n int
+	if err = s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE platform_role='superadmin'`).Scan(&n); err != nil {
+		return false, "", "", err
+	}
+	if n > 0 {
+		return false, "", "", nil
+	}
+
+	username = "admin"
+	// admin 已被占用（普通用户）时退化为 admin-xxxx
+	if s.db.QueryRow(`SELECT 1 FROM users WHERE username='admin'`).Scan(new(int)) == nil {
+		username = "admin-" + ids.Token(2)
+	}
+	password = ids.Token(8) // 16 位随机 hex，强密码
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return false, "", "", err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, "", "", err
+	}
+	defer tx.Rollback()
+
+	userID := ids.New()
+	if _, err := tx.Exec(`INSERT INTO users(id,username,display_name,password_hash,platform_role) VALUES(?,?,?,?,'superadmin')`,
+		userID, username, "平台超管", hash); err != nil {
+		return false, "", "", err
+	}
+	ledgerID := ids.New()
+	if _, err := tx.Exec(`INSERT INTO ledgers(id,name) VALUES(?,?)`, ledgerID, "平台管理"); err != nil {
+		return false, "", "", err
+	}
+	if _, err := tx.Exec(`INSERT INTO ledger_members(ledger_id,user_id,role) VALUES(?,?,'admin')`, ledgerID, userID); err != nil {
+		return false, "", "", err
+	}
+	if err := SeedCoreCategories(tx, ledgerID); err != nil {
+		return false, "", "", err
+	}
+	if err := SeedLibrary(tx, ledgerID); err != nil {
+		return false, "", "", err
+	}
+	if err := seedDefaultCashAccount(tx, ledgerID, userID); err != nil {
+		return false, "", "", err
+	}
+	if err := audit(tx, ledgerID, userID, "user.bootstrap_superadmin", "user", userID, map[string]any{"username": username}); err != nil {
+		return false, "", "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, "", "", err
+	}
+	return true, username, password, nil
+}
+
 // RegisterUser 公开注册：创建用户 + 其独立账本 + admin 成员关系 + 种子。
 // 每个注册用户拥有自己的账本，互相隔离；家庭共享仍走账本内邀请。
 func (s *Service) RegisterUser(username, displayName, password string) (userID string, err error) {

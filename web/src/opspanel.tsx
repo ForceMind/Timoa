@@ -122,7 +122,7 @@ export function OpsPanel({ opsPath, LoginView }: { opsPath: string; LoginView: (
           <input value={newAdmin} onChange={(e) => setNewAdmin(e.target.value)} placeholder="输入用户名" />
         </div>
         <button className="btn" disabled={busy || !newAdmin.trim()} onClick={makeSuper}>提升为超管</button>
-        <p className="admin-note">首个超管请用服务器命令 <code>xiaozhang make-superadmin -username &lt;用户名&gt;</code> 设置。</p>
+        <p className="admin-note">首次部署已自动生成平台超管（见服务器 <code>initial-admin.txt</code> 或 <code>xiaozhang panel</code> 输出）。此处可将其它注册用户一并提升为超管。</p>
       </div>
 
       <div className="panel">

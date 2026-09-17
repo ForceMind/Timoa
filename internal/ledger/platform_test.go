@@ -2,6 +2,8 @@ package ledger_test
 
 import (
 	"testing"
+
+	"xiaozhang/internal/auth"
 )
 
 // TestPlatformRegisterAndOverview：公开注册（独立账本、隔离）+ 平台超管
@@ -115,5 +117,61 @@ func TestPlatformFreezeAndReset(t *testing.T) {
 	// 不存在的用户
 	if err := e.svc.PlatformResetPassword("no-such-id", "whatever-123"); err == nil {
 		t.Fatal("reset for missing user should fail")
+	}
+}
+
+// TestEnsurePlatformSuperadmin：无任何平台超管时自动创建 admin + 随机密码（首次部署），
+// 密码可登录、role=superadmin、配独立账本与默认现金账户；已有超管时不重复创建。
+func TestEnsurePlatformSuperadmin(t *testing.T) {
+	e := newTestEnv(t)
+
+	// 初始（newTestEnv 只建了账本 admin，不是平台超管）→ 应创建一个
+	created, uname, pwd, err := e.svc.EnsurePlatformSuperadmin()
+	if err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if !created {
+		t.Fatal("should create superadmin when none exists")
+	}
+	if uname != "admin" {
+		t.Fatalf("username should be admin, got %q", uname)
+	}
+	if len(pwd) < 16 {
+		t.Fatalf("password too weak: %q", pwd)
+	}
+
+	// 账号确为平台超管，且密码可校验通过
+	var uid, role, hash string
+	if err := e.db.QueryRow(`SELECT id,platform_role,password_hash FROM users WHERE username=?`, uname).Scan(&uid, &role, &hash); err != nil {
+		t.Fatal(err)
+	}
+	if role != "superadmin" {
+		t.Fatalf("role should be superadmin, got %q", role)
+	}
+	if !auth.VerifyPassword(pwd, hash) {
+		t.Fatal("returned password does not verify against stored hash")
+	}
+
+	// 有独立账本 + 默认现金账户
+	var ledgerID string
+	if err := e.db.QueryRow(`SELECT ledger_id FROM ledger_members WHERE user_id=? AND role='admin'`, uid).Scan(&ledgerID); err != nil {
+		t.Fatalf("superadmin has own ledger: %v", err)
+	}
+	var cash int
+	if err := e.db.QueryRow(`SELECT COUNT(1) FROM accounts WHERE ledger_id=? AND type='cash'`, ledgerID).Scan(&cash); err != nil || cash != 1 {
+		t.Fatalf("default cash account missing: cash=%d err=%v", cash, err)
+	}
+
+	// 再次调用：已有超管 → 不重复创建
+	created2, _, _, err := e.svc.EnsurePlatformSuperadmin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created2 {
+		t.Fatal("should not create a second superadmin")
+	}
+	var n int
+	if err := e.db.QueryRow(`SELECT COUNT(1) FROM users WHERE platform_role='superadmin'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expect exactly 1 superadmin, got %d err=%v", n, err)
 	}
 }
