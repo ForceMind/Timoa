@@ -13,7 +13,7 @@ import { Landing } from './landing'
 import { AdminPanel } from './admin'
 import { OpsPanel } from './opspanel'
 import { AccountForm } from './accountform'
-import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme''
+import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
 import { installState, promptInstall, subscribeInstall, type InstallState } from './pwa'
 
 type View = 'home' | 'txs' | 'entry' | 'stats' | 'me'
