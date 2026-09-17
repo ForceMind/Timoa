@@ -38,6 +38,7 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/registration-status", s.registrationStatus)
 	mux.Handle("POST /api/v1/auth/logout", s.requireAuth(http.HandlerFunc(s.logout)))
 	mux.Handle("GET /api/v1/auth/me", s.requireAuth(http.HandlerFunc(s.me)))
+	mux.Handle("POST /api/v1/auth/password", s.requireAuth(http.HandlerFunc(s.changeMyPassword)))
 
 	// 平台超管后台（platform_role='superadmin'，服务端强制；仅元数据/统计）
 	mux.Handle("GET /api/v1/platform/overview", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformOverview))))
@@ -235,6 +236,47 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// changeMyPassword 自助改密：校验旧密码 → 更新 → 清除 must_change_password →
+// 吊销其它会话（仅保留当前）。首次部署的初始超管登录后必须走此流程。
+func (s *server) changeMyPassword(w http.ResponseWriter, r *http.Request) {
+	sess := auth.SessionFrom(r.Context())
+	var body struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, err)
+		return
+	}
+	if len(body.NewPassword) < 8 {
+		writeErr(w, 400, "invalid_input", "new password must be at least 8 characters")
+		return
+	}
+	var hash string
+	if err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id=?`, sess.UserID).Scan(&hash); err != nil {
+		writeError(w, err)
+		return
+	}
+	if !auth.VerifyPassword(body.OldPassword, hash) {
+		writeErr(w, 403, "reauth_failed", "old password incorrect")
+		return
+	}
+	newHash, err := auth.HashPassword(body.NewPassword)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.db.Exec(`UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?`, newHash, sess.UserID); err != nil {
+		writeError(w, err)
+		return
+	}
+	// 改密后吊销其它会话，保留当前（当前 token 即 cookie）
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		_ = auth.RevokeOtherUserSessions(s.db, sess.UserID, c.Value)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *server) me(w http.ResponseWriter, r *http.Request) {
 	sess := auth.SessionFrom(r.Context())
 	m, err := s.membership(sess.UserID)
@@ -243,14 +285,15 @@ func (s *server) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var displayName, username, platformRole string
-	if err := s.db.QueryRow(`SELECT username,display_name,platform_role FROM users WHERE id=?`, sess.UserID).Scan(&username, &displayName, &platformRole); err != nil {
+	var mustChange bool
+	if err := s.db.QueryRow(`SELECT username,display_name,platform_role,COALESCE(must_change_password,0) FROM users WHERE id=?`, sess.UserID).Scan(&username, &displayName, &platformRole, &mustChange); err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user_id": sess.UserID, "username": username, "display_name": displayName,
 		"ledger_id": m.ledgerID, "ledger_name": m.ledgerName, "role": m.role,
-		"platform_role": platformRole,
+		"platform_role": platformRole, "must_change_password": mustChange,
 	})
 }
 

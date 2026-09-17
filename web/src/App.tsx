@@ -39,7 +39,50 @@ export default function App() {
     if (showLogin) return <Login onLogin={setMe} onBack={() => setShowLogin(false)} />
     return <Landing onLogin={setMe} onGoLogin={() => setShowLogin(true)} />
   }
+  // 首次部署的初始超管：登录后必须先改初始密码，否则不进入应用
+  if (me.must_change_password) {
+    return <ForceChangePassword onDone={async () => setMe(await api.me())} />
+  }
   return <Main me={me} onLogout={() => setMe(null)} />
+}
+
+// ForceChangePassword 强制改密框（不可关闭）：初始随机密码登录后必须设置新密码。
+function ForceChangePassword({ onDone }: { onDone: () => void }) {
+  const [oldPwd, setOldPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [newPwd2, setNewPwd2] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPwd.length < 8) { setErr('新密码至少 8 位'); return }
+    if (newPwd !== newPwd2) { setErr('两次输入的新密码不一致'); return }
+    setBusy(true); setErr('')
+    try {
+      await api.changePassword(oldPwd, newPwd)
+      onDone()
+    } catch (e2) {
+      setErr(e2 instanceof ApiError ? e2.message : '修改失败')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="login-wrap">
+      <h1>设置新密码</h1>
+      <p className="slogan">首次登录，请先修改初始密码</p>
+      {err && <div className="alert" role="alert">{err}</div>}
+      <form onSubmit={submit}>
+        <div className="field"><label htmlFor="op">初始密码</label>
+          <input id="op" type="password" value={oldPwd} onChange={(e) => setOldPwd(e.target.value)} autoComplete="current-password" required /></div>
+        <div className="field"><label htmlFor="np">新密码（至少 8 位）</label>
+          <input id="np" type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} autoComplete="new-password" required /></div>
+        <div className="field"><label htmlFor="np2">确认新密码</label>
+          <input id="np2" type="password" value={newPwd2} onChange={(e) => setNewPwd2(e.target.value)} autoComplete="new-password" required /></div>
+        <button className="btn" type="submit" disabled={busy}>{busy ? '提交中…' : '确认修改'}</button>
+      </form>
+    </div>
+  )
 }
 
 function JoinView({ token, onJoined }: { token: string; onJoined: (m: Me) => void }) {

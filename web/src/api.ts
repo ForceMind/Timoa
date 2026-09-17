@@ -33,6 +33,7 @@ export interface Me {
   ledger_name: string
   role: 'admin' | 'member'
   platform_role?: 'user' | 'superadmin'
+  must_change_password?: boolean
 }
 
 export interface PlatformStats {
@@ -121,6 +122,8 @@ export const api = {
     req<{ user_id: string }>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   logout: () => req<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
   me: () => req<Me>('/api/v1/auth/me'),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    req<{ ok: boolean }>('/api/v1/auth/password', { method: 'POST', body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }) }),
   register: (b: { username: string; password: string; display_name?: string }) =>
     req<{ user_id: string }>('/api/v1/auth/register', { method: 'POST', body: JSON.stringify(b) }),
   registrationStatus: () => req<{ registration_open: boolean }>('/api/v1/auth/registration-status'),

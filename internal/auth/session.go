@@ -83,3 +83,11 @@ func RevokeUserSessions(db *sql.DB, userID string) error {
 	_, err := db.Exec(`UPDATE sessions SET revoked_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE user_id=? AND revoked_at IS NULL`, userID)
 	return err
 }
+
+// RevokeOtherUserSessions revokes all sessions of a user except the given
+// (current) token — used after a self-service password change so the actor
+// stays logged in while other devices are signed out.
+func RevokeOtherUserSessions(db *sql.DB, userID, keepToken string) error {
+	_, err := db.Exec(`UPDATE sessions SET revoked_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE user_id=? AND revoked_at IS NULL AND id<>?`, userID, sessionID(keepToken))
+	return err
+}

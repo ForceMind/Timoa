@@ -96,7 +96,7 @@ func (s *Service) EnsurePlatformSuperadmin() (created bool, username, password s
 	defer tx.Rollback()
 
 	userID := ids.New()
-	if _, err := tx.Exec(`INSERT INTO users(id,username,display_name,password_hash,platform_role) VALUES(?,?,?,?,'superadmin')`,
+	if _, err := tx.Exec(`INSERT INTO users(id,username,display_name,password_hash,platform_role,must_change_password) VALUES(?,?,?,?,'superadmin',1)`,
 		userID, username, "平台超管", hash); err != nil {
 		return false, "", "", err
 	}

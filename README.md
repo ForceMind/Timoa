@@ -46,6 +46,17 @@ go run ./cmd/xiaozhang make-superadmin -username admin
 
 已用一键脚本部署的，对应命令为 `xiaozhang init-admin|reset-password|make-superadmin -data /var/lib/xiaozhang ...`（用 `sudo -u xiaozhang` 执行）。
 
+## 运营面板（平台超管后台）
+
+- **首次部署/升级到含此功能的版本**时，若系统尚无平台超管，会自动创建一个 `admin` 超管（随机强密码），凭据写入 `<数据目录>/initial-admin.txt`（0600 权限，不进日志）。
+- 后台入口是**固定随机路径**（如 `/ops-x7k9p2qm`），不暴露、不可猜；查看入口与初始凭据：
+
+```bash
+sudo -u xiaozhang xiaozhang panel -data /var/lib/xiaozhang
+```
+
+浏览器打开打印出的地址（`http://<服务器IP>:8787/ops-...`）→ 用 `admin` + 初始密码登录 → **首次登录强制改密**。面板内可看服务状态/全局统计/用户列表（仅元数据，不看账目明细）、开关公开注册、提升更多超管、以及「重新生成路径」（旧入口立即失效）。
+
 ## 测试
 
 ```bash
