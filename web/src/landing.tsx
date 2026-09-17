@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, Me } from './api'
+import { api, ApiError, type Me } from './api'
 import { brand } from './brand'
 
 // landing.tsx: 官网落地页（未登录首屏）+ 公开注册。

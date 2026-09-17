@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, PlatformOverview } from './api'
+import { api, ApiError, type PlatformOverview } from './api'
 
 // admin.tsx: 平台超管后台。只看跨用户统计与元数据（用户列表、账本数、
 // 交易笔数、注册时间），不看任何账本明细。管理操作：冻结/解冻、重置密码、
