@@ -56,19 +56,21 @@ install_binary() {
 	info "下载 xiaozhang ${version} (linux/${arch}) ..."
 	tmp="$(mktemp -d)"
 	trap 'rm -rf "$tmp"' RETURN
-	curl -fsSL -o "$tmp/xiaozhang" \
-		"https://github.com/${REPO}/releases/download/${version}/xiaozhang-linux-${arch}" \
+	local asset="xiaozhang-linux-${arch}"
+	# 保存为原始文件名，sha256sum -c 按 SHA256SUMS 中记录的文件名查找
+	curl -fsSL -o "$tmp/${asset}" \
+		"https://github.com/${REPO}/releases/download/${version}/${asset}" \
 		|| die "下载失败：${version} linux/${arch} 不存在或网络不通"
 	# 有校验和文件则校验
 	if curl -fsSL -o "$tmp/SHA256SUMS" \
 		"https://github.com/${REPO}/releases/download/${version}/SHA256SUMS" 2>/dev/null; then
-		(cd "$tmp" && grep "xiaozhang-linux-${arch}\$" SHA256SUMS | sha256sum -c -) \
+		(cd "$tmp" && grep " ${asset}\$" SHA256SUMS | sha256sum -c -) \
 			|| die "SHA256 校验失败，文件可能被篡改，已中止"
 		info "SHA256 校验通过"
 	else
 		warn "该 Release 无 SHA256SUMS，跳过校验"
 	fi
-	install -m 0755 "$tmp/xiaozhang" "$BIN"
+	install -m 0755 "$tmp/${asset}" "$BIN"
 	info "二进制已安装：$BIN ($("$BIN" --version 2>/dev/null || echo "$version"))"
 }
 
