@@ -57,6 +57,17 @@ export interface PlatformOverview {
   users: PlatformUser[]
 }
 
+// OpsStatus: 运营面板状态接口返回
+export interface OpsStatus {
+  version: string
+  addr: string
+  data_dir: string
+  registration_open: boolean
+  ops_path: string
+  stats: PlatformStats
+  users: PlatformUser[]
+}
+
 export interface Account {
   id: string
   name: string
@@ -120,6 +131,14 @@ export const api = {
     req<{ ok: boolean }>(`/api/v1/platform/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) }),
   platformSetRegistration: (open: boolean) =>
     req<{ registration_open: boolean }>('/api/v1/platform/registration', { method: 'POST', body: JSON.stringify({ open }) }),
+  // 运营面板（随机路径入口，opsPath 不带斜杠）
+  opsStatus: (opsPath: string) => req<OpsStatus>(`/${opsPath}/api/status`),
+  opsMakeSuperadmin: (opsPath: string, username: string) =>
+    req<{ ok: boolean }>(`/${opsPath}/api/make-superadmin`, { method: 'POST', body: JSON.stringify({ username }) }),
+  opsRegeneratePath: (opsPath: string) =>
+    req<{ ops_path: string }>(`/${opsPath}/api/regenerate-path`, { method: 'POST', body: JSON.stringify({}) }),
+  opsSetRegistration: (opsPath: string, open: boolean) =>
+    req<{ registration_open: boolean }>(`/${opsPath}/api/registration`, { method: 'POST', body: JSON.stringify({ open }) }),
   accounts: () => req<{ accounts: Account[] }>('/api/v1/accounts'),
   createAccount: (b: { name: string; type: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),

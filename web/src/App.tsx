@@ -11,6 +11,7 @@ import { sync, type SyncState } from './sync'
 import { exportOutbox } from './db'
 import { Landing } from './landing'
 import { AdminPanel } from './admin'
+import { OpsPanel } from './opspanel'
 import { getFontSizePref, getThemePref, isDarkNow, setFontSizePref, setThemePref, subscribeTheme, type FontSizePref, type ThemePref } from './theme'
 import { installState, promptInstall, subscribeInstall, type InstallState } from './pwa'
 
@@ -21,11 +22,17 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const [joinToken] = useState(() => new URLSearchParams(window.location.search).get('join'))
   const [showLogin, setShowLogin] = useState(false)
+  // 运营面板随机路径：形如 /ops-x7k9p2qm，命中则渲染独立面板（不走普通应用壳）
+  const [opsPath] = useState(() => {
+    const m = window.location.pathname.match(/^\/(ops-[a-f0-9]{8})\/?$/)
+    return m ? m[1] : ''
+  })
 
   useEffect(() => {
     api.me().then(setMe).catch(() => setMe(null)).finally(() => setBooting(false))
   }, [])
 
+  if (opsPath) return <OpsPanel opsPath={opsPath} LoginView={(p) => <Login onLogin={p.onLogin} />} />
   if (booting) return <div className="shell"><p className="empty">加载中…</p></div>
   if (!me) {
     if (joinToken) return <JoinView token={joinToken} onJoined={setMe} />

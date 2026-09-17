@@ -39,6 +39,32 @@ func (s *Service) SetRegistrationOpen(open bool) error {
 	return err
 }
 
+// EnsureOpsPath 返回运营面板的随机路径（不带前导斜杠）；首次调用时生成并持久化，
+// 之后固定不变。CLI 与 serve 启动都经此，保证入口稳定。
+func (s *Service) EnsureOpsPath() (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM platform_settings WHERE key='ops_path'`).Scan(&v)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if v != "" {
+		return v, nil
+	}
+	v = "ops-" + ids.Token(4) // 如 ops-x7k9p2qm，8 位随机 hex
+	if _, err := s.db.Exec(`INSERT INTO platform_settings(key,value) VALUES('ops_path',?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, v); err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
+// RegenerateOpsPath 重新生成随机路径（旧入口立即失效），返回新路径。
+func (s *Service) RegenerateOpsPath() (string, error) {
+	v := "ops-" + ids.Token(4)
+	_, err := s.db.Exec(`UPDATE platform_settings SET value=? WHERE key='ops_path'`, v)
+	return v, err
+}
+
 // RegisterUser 公开注册：创建用户 + 其独立账本 + admin 成员关系 + 种子。
 // 每个注册用户拥有自己的账本，互相隔离；家庭共享仍走账本内邀请。
 func (s *Service) RegisterUser(username, displayName, password string) (userID string, err error) {

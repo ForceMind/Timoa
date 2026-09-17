@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,9 +54,38 @@ func main() {
 		case "restore":
 			cmdRestore(os.Args[2:])
 			return
+		case "panel":
+			cmdPanel(os.Args[2:])
+			return
 		}
 	}
 	cmdServe(os.Args[1:])
+}
+
+// cmdPanel 打印运营面板的随机入口 URL（首次运行生成路径并持久化）。
+// 用法: xiaozhang panel -data <数据目录>
+func cmdPanel(args []string) {
+	fs := flag.NewFlagSet("panel", flag.ExitOnError)
+	data := fs.String("data", config.Getenv("XIAOZHANG_DATA_DIR", "./data"), "data directory")
+	addr := fs.String("addr", config.Getenv("XIAOZHANG_ADDR", "127.0.0.1:8787"), "service address")
+	_ = fs.Parse(args)
+
+	db, err := openDBFull(*data)
+	if err != nil {
+		log.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	svc := ledger.NewService(db)
+	opsPath, err := svc.EnsureOpsPath()
+	if err != nil {
+		log.Fatalf("ensure ops path: %v", err)
+	}
+	host := *addr
+	if strings.HasPrefix(host, "0.0.0.0") {
+		host = "127.0.0.1" + strings.TrimPrefix(host, "0.0.0.0")
+	}
+	fmt.Printf("\n小账运营面板入口（固定随机路径，登录后可见）:\n\n  http://%s/%s\n\n请妥善保管该地址；泄露后可在面板内「重新生成路径」。\n\n", host, opsPath)
 }
 
 // openDBFull opens the database and applies pending migrations.

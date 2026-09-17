@@ -134,6 +134,11 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/v1/sync/push", s.requireAuth(http.HandlerFunc(s.syncPush)))
 	mux.Handle("GET /api/v1/sync/pull", s.requireAuth(http.HandlerFunc(s.syncPull)))
 
+	// 运营面板：随机路径入口（ops-x7k9p2qm），GET 页面走 SPA 回退，API 需超管
+	if opsPath, err := s.ledger.EnsureOpsPath(); err == nil && opsPath != "" {
+		s.registerOpsRoutes(mux, opsPath)
+	}
+
 	// 同源托管前端（生产）；/api 与 /healthz 已在上方优先匹配
 	mux.Handle("/", staticHandler())
 
