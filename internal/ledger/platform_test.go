@@ -1,6 +1,7 @@
 package ledger_test
 
 import (
+	"strings"
 	"testing"
 
 	"xiaozhang/internal/auth"
@@ -133,8 +134,9 @@ func TestEnsurePlatformSuperadmin(t *testing.T) {
 	if !created {
 		t.Fatal("should create superadmin when none exists")
 	}
-	if uname != "admin" {
-		t.Fatalf("username should be admin, got %q", uname)
+	// newTestEnv 已占用 admin（账本用户），故此处应为 admin- 前缀；空库则是 admin
+	if uname != "admin" && !strings.HasPrefix(uname, "admin-") {
+		t.Fatalf("username should be admin or admin-<suffix>, got %q", uname)
 	}
 	if len(pwd) < 16 {
 		t.Fatalf("password too weak: %q", pwd)
