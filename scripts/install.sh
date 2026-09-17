@@ -206,6 +206,7 @@ do_install() {
 	echo "  数据目录: ${DATA_DIR}（每日自动备份，保留 14 份）"
 	echo "  配置文件: ${ENV_FILE}"
 	echo "  常用命令: systemctl status|restart xiaozhang；journalctl -u xiaozhang -f"
+	echo "  终端运维面板: sudo xiaozhang admin（自动读取 /etc/xiaozhang/env 数据目录）"
 	echo
 	# 首次部署已自动生成平台超管（initial-admin.txt）+ 随机后台路径，直接展示入口与凭据
 	sudo -u "$USER_NAME" env XIAOZHANG_DATA_DIR="$DATA_DIR" XIAOZHANG_ADDR="${XIAOZHANG_ADDR:-127.0.0.1:8787}" \
@@ -219,6 +220,7 @@ do_upgrade() {
 	# restart 原子加载新二进制（服务未运行时等价于启动）
 	systemctl restart xiaozhang
 	health_check && info "升级完成"
+	echo "  终端运维面板: sudo xiaozhang admin"
 }
 
 do_uninstall() {
