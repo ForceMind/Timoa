@@ -186,3 +186,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 /* 已有账户后的新增账户表单：紧凑地嵌入「我的 → 资金账户」，支持多张卡及投资账户。 */
 .account-form { margin: 10px 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--primary-soft); }
 .account-form .field { margin-bottom: 10px; }
+
+/* 运营面板标签页导航 */
+.ops-tabs { display: flex; gap: 6px; margin-top: 10px; }
+.ops-tab { flex: 1; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 10px; padding: 8px 0; font-size: 0.85rem; cursor: pointer; }
+.ops-tab.on { background: var(--primary-soft); color: var(--primary-dark); border-color: var(--primary); font-weight: 600; }

@@ -44,7 +44,7 @@ func (s *server) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	s.setSessionCookie(w, token)
+	s.setSessionCookie(w, r, token)
 	writeJSON(w, http.StatusCreated, map[string]any{"user_id": userID})
 }
 

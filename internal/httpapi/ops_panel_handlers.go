@@ -21,6 +21,7 @@ func (s *server) registerOpsRoutes(mux *http.ServeMux, opsPath string) {
 	mux.Handle("POST "+base+"make-superadmin", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.opsMakeSuperadmin))))
 	mux.Handle("POST "+base+"regenerate-path", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.opsRegeneratePath))))
 	mux.Handle("POST "+base+"registration", s.requireAuth(s.requireSuperadmin(http.HandlerFunc(s.platformSetRegistration))))
+	s.registerOpsAdminRoutes(mux, opsPath)
 }
 
 // opsStatus 面板首页状态：版本、监听地址、注册开关、当前后台路径、全局统计与用户列表。

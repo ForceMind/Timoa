@@ -224,7 +224,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	s.setSessionCookie(w, token)
+	s.setSessionCookie(w, r, token)
 	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "display_name": displayName})
 }
 
@@ -232,7 +232,7 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = auth.RevokeSession(s.db, c.Value)
 	}
-	s.clearSessionCookie(w)
+	s.clearSessionCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -297,23 +297,36 @@ func (s *server) me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) setSessionCookie(w http.ResponseWriter, token string) {
+func (s *server) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
 	c := &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   s.cfg.SecureCookies,
+		Secure:   s.secureCookiesFor(r),
 		MaxAge:   int(auth.SessionTTL.Seconds()),
 	}
 	http.SetCookie(w, c)
 }
 
-func (s *server) clearSessionCookie(w http.ResponseWriter) {
+// secureCookiesFor：显式开启 -secure-cookies / XIAOZHANG_SECURE_COOKIES=1，或
+// 请求来自 HTTPS 反代（X-Forwarded-Proto=https / TLS）时，给会话 Cookie 加 Secure。
+// 直连 IP 明文 HTTP 下仍不带 Secure，保证可用。
+func (s *server) secureCookiesFor(r *http.Request) bool {
+	if s.cfg.SecureCookies {
+		return true
+	}
+	if r != nil && (r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")) {
+		return true
+	}
+	return false
+}
+
+func (s *server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, Secure: s.cfg.SecureCookies, MaxAge: -1,
+		SameSite: http.SameSiteLaxMode, Secure: s.secureCookiesFor(r), MaxAge: -1,
 	})
 }
 

@@ -69,6 +69,28 @@ export interface OpsStatus {
   users: PlatformUser[]
 }
 
+// 运营面板：用户详情（超管可查看该用户全部账户与流水）
+export interface OpsUserDetail {
+  user_id: string
+  username: string
+  display_name: string
+  created_at: string
+  archived: boolean
+  ledger_id?: string
+  accounts: Account[]
+  transactions: Tx[]
+}
+
+export interface OpsBackup { name: string; size: number; created_at: string }
+export interface OpsAuditItem {
+  created_at: string
+  action: string
+  entity_type: string
+  entity_id: string
+  actor: string
+  detail: string
+}
+
 export interface Account {
   id: string
   name: string
@@ -142,6 +164,15 @@ export const api = {
     req<{ ops_path: string }>(`/${opsPath}/api/regenerate-path`, { method: 'POST', body: JSON.stringify({}) }),
   opsSetRegistration: (opsPath: string, open: boolean) =>
     req<{ registration_open: boolean }>(`/${opsPath}/api/registration`, { method: 'POST', body: JSON.stringify({ open }) }),
+  opsUserDetail: (opsPath: string, userID: string) => req<OpsUserDetail>(`/${opsPath}/api/user/${userID}`),
+  opsFreezeUser: (opsPath: string, userID: string, freeze: boolean) =>
+    req<{ ok: boolean }>(`/${opsPath}/api/user/${userID}/freeze`, { method: 'POST', body: JSON.stringify({ freeze }) }),
+  opsResetPassword: (opsPath: string, userID: string) =>
+    req<{ new_password: string }>(`/${opsPath}/api/user/${userID}/reset-password`, { method: 'POST', body: JSON.stringify({}) }),
+  opsBackups: (opsPath: string) => req<{ backups: OpsBackup[]; dir: string }>(`/${opsPath}/api/backups`),
+  opsCreateBackup: (opsPath: string) =>
+    req<{ ok: boolean; name: string; size: number }>(`/${opsPath}/api/backups`, { method: 'POST', body: JSON.stringify({}) }),
+  opsAudit: (opsPath: string) => req<{ audit: OpsAuditItem[] }>(`/${opsPath}/api/audit`),
   accounts: () => req<{ accounts: Account[] }>('/api/v1/accounts'),
   createAccount: (b: { name: string; type: string; opening_balance?: string; opening_date?: string; balance_confirmed?: boolean }) =>
     req<Account>('/api/v1/accounts', { method: 'POST', body: JSON.stringify(b) }),
