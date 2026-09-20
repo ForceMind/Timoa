@@ -119,7 +119,7 @@ func TestAccountWithEntriesCannotUpdateOpeningOrDelete(t *testing.T) {
 	e := newTestEnv(t)
 	from := e.account(t, "银行卡", "bank_card", 1000_00)
 	to := e.account(t, "现金", "cash", 0)
-	e.post(t, ledger.PostInput{Type: "transfer", Amount: 100_00, FromAccountID: from.ID, ToAccountID: to.ID, BusinessDate: "2026-01-02", OperationID: "test-account-immutable"})
+	e.post(t, ledger.PostInput{Type: "transfer", AmountCents: 100_00, FromAccountID: from.ID, ToAccountID: to.ID, BusinessDate: "2026-01-02", OperationID: "test-account-immutable"})
 	if err := e.svc.UpdateAccount(e.ledgerID, e.userID, from.ID, "改名", 1); err == nil {
 		t.Fatal("updating opening balance after entries should fail")
 	}
