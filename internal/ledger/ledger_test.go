@@ -93,3 +93,37 @@ func (e *testEnv) balance(t *testing.T, accountID string) int64 {
 	}
 	return v
 }
+
+func TestUpdateAndDeleteUnusedAccount(t *testing.T) {
+	e := newTestEnv(t)
+	a := e.account(t, "旧账户", "bank_card", 100_00)
+	if err := e.svc.UpdateAccount(e.ledgerID, e.userID, a.ID, "新账户", 250_00); err != nil {
+		t.Fatalf("update unused account: %v", err)
+	}
+	updated, err := e.svc.GetAccount(e.ledgerID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != "新账户" || updated.OpeningBalance != "25000" {
+		t.Fatalf("updated=%+v, want name and opening 25000", updated)
+	}
+	if err := e.svc.DeleteAccount(e.ledgerID, e.userID, a.ID); err != nil {
+		t.Fatalf("delete unused account: %v", err)
+	}
+	if _, err := e.svc.GetAccount(e.ledgerID, a.ID); err == nil {
+		t.Fatal("deleted account should not be found")
+	}
+}
+
+func TestAccountWithEntriesCannotUpdateOpeningOrDelete(t *testing.T) {
+	e := newTestEnv(t)
+	from := e.account(t, "银行卡", "bank_card", 1000_00)
+	to := e.account(t, "现金", "cash", 0)
+	e.post(t, ledger.PostInput{Type: "transfer", Amount: 100_00, FromAccountID: from.ID, ToAccountID: to.ID, BusinessDate: "2026-01-02", OperationID: "test-account-immutable"})
+	if err := e.svc.UpdateAccount(e.ledgerID, e.userID, from.ID, "改名", 1); err == nil {
+		t.Fatal("updating opening balance after entries should fail")
+	}
+	if err := e.svc.DeleteAccount(e.ledgerID, e.userID, from.ID); err == nil {
+		t.Fatal("deleting account with entries should fail")
+	}
+}

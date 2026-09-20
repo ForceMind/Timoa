@@ -49,6 +49,8 @@ func NewServer(cfg config.Config, db *sql.DB) http.Handler {
 	mux.Handle("GET /api/v1/accounts", s.requireAuth(http.HandlerFunc(s.listAccounts)))
 	mux.Handle("POST /api/v1/accounts", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/archive", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.archiveAccount))))
+	mux.Handle("POST /api/v1/accounts/{id}/update", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.updateAccount))))
+	mux.Handle("POST /api/v1/accounts/{id}/delete", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.deleteAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/sub", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.createSubAccount))))
 	mux.Handle("POST /api/v1/accounts/{id}/stored-value-meta", s.requireAuth(s.requireAdmin(http.HandlerFunc(s.setStoredValueMeta))))
 
@@ -443,6 +445,47 @@ func (s *server) archiveAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.ledger.ArchiveAccount(m.ledgerID, auth.SessionFrom(r.Context()).UserID, r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *server) updateAccount(w http.ResponseWriter, r *http.Request) {
+	m := s.mustMembership(w, r)
+	if m == nil {
+		return
+	}
+	var body struct {
+		Name         string `json:"name"`
+		OpeningYuan string `json:"opening_balance"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, err)
+		return
+	}
+	var opening int64
+	var err error
+	if strings.TrimSpace(body.OpeningYuan) != "" {
+		opening, err = money.ParseYuan(body.OpeningYuan)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid_amount", "opening balance: "+err.Error())
+			return
+		}
+	}
+	if err := s.ledger.UpdateAccount(m.ledgerID, auth.SessionFrom(r.Context()).UserID, r.PathValue("id"), strings.TrimSpace(body.Name), opening); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *server) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	m := s.mustMembership(w, r)
+	if m == nil {
+		return
+	}
+	if err := s.ledger.DeleteAccount(m.ledgerID, auth.SessionFrom(r.Context()).UserID, r.PathValue("id")); err != nil {
 		writeError(w, err)
 		return
 	}

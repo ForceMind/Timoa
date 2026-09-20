@@ -7,6 +7,7 @@
   --primary-dark: #228c65;
   --primary-soft: #e3f4ec;
   --expense: #e0574b;
+  --amount-expense: #17251f;
   --income: #2fa87c;
   --line: #e8eee9;
   --purple: #8b7fd4;
@@ -42,6 +43,8 @@
   --chart-grid: #233129;
   --chart-axis: #2a3830;
   --chart-text: #8fa096;
+  --purple: #b7aaff;
+  --amount-expense: #f1f5f3;
 }
 
 /* 大字模式：根字号放大，全站 rem 随之放大。 */
@@ -89,7 +92,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-
 .tx .title { font-weight: 500; font-size: 0.95rem; }
 .tx .meta { color: var(--muted); font-size: 0.75rem; margin-top: 2px; }
 .tx .amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.amt.expense { color: var(--ink); }
+.amt.expense { color: var(--amount-expense); }
 .amt.income { color: var(--income); }
 
 /* 记账工作区 */

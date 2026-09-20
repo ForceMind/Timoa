@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySum, type Me, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
+import { ACCOUNT_ICONS, ACCOUNT_TYPES, api, ApiError, type Account, type Category, type DailySum, type Me, type Recommendation, type RecurrenceInstance, type Summary, type Template, type Tx } from './api'
 import { brand } from './brand'
 import { DataPanel } from './data'
 import { TxDetailView } from './detail'
@@ -580,7 +580,7 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
         {accounts.filter((a) => !a.parent_id).map((a) => (
           <div key={a.id}>
             <div className="tx">
-              <div className="icon" style={{ background: 'var(--primary-soft)' }}>💳</div>
+              <div className="icon" style={{ background: 'var(--primary-soft)' }}>{ACCOUNT_ICONS[a.type] ?? '💼'}</div>
               <div className="main">
                 <div className="title">{a.name}</div>
                 <div className="meta">
@@ -600,6 +600,27 @@ function MeView({ me, accounts, expenseCats, onLogout, onChanged }: {
               {me.role === 'admin' && !a.archived && !['credit_card', 'huabei', 'loan_liability'].includes(a.type) && (
                 <button className="btn-text" style={{ fontSize: '0.8rem' }}
                   onClick={() => setSubForm(subForm === a.id ? '' : a.id)}>＋子账户</button>
+              )}
+              {me.role === 'admin' && !a.archived && (
+                <button className="btn-text" style={{ fontSize: '0.8rem' }} onClick={() => {
+                  const name = prompt('账户名称', a.name)
+                  if (name === null) return
+                  const opening = prompt('期初余额（元；已有流水时请用余额调整）', formatCents(a.opening_balance_cents))
+                  if (opening === null) return
+                  void api.updateAccount(a.id, name.trim(), opening.trim()).then(onChanged).catch((e: ApiError) => alert(e.message))
+                }}>编辑</button>
+              )}
+              {me.role === 'admin' && !a.archived && (
+                <button className="btn-text" style={{ fontSize: '0.8rem' }} onClick={() => {
+                  if (!confirm(`归档“${a.name}”？归档后不再用于记账，但保留全部历史数据。`)) return
+                  void api.archiveAccount(a.id).then(onChanged).catch((e: ApiError) => alert(e.message))
+                }}>归档</button>
+              )}
+              {me.role === 'admin' && !a.archived && (
+                <button className="btn-text" style={{ fontSize: '0.8rem' }} onClick={() => {
+                  if (!confirm(`删除“${a.name}”？仅无流水、无子账户的账户可删除；其他账户会提示你归档。`)) return
+                  void api.deleteAccount(a.id).then(onChanged).catch((e: ApiError) => alert(e.message))
+                }}>删除</button>
               )}
             </div>
             {subForm === a.id && (
@@ -982,16 +1003,19 @@ function EntryView({ accounts, expenseCats, incomeCats, prefill, onSaved, onCanc
         </div>
 
         {!op && type !== 'transfer' && (
-          <div className="chips">
-            {cats.map((c) => {
-              const st = { icon: c.icon || catStyle(c.name).icon, bg: catStyle(c.name).bg }
-              return (
-                <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => { setCatID(c.id); setCatTouched(true) }}>
-                  <span className="ic" style={{ background: st.bg }}>{st.icon}</span><span>{c.name}</span>
-                </button>
-              )
-            })}
-          </div>
+          <>
+            <div className="chips">
+              {cats.map((c) => {
+                const st = { icon: c.icon || catStyle(c.name).icon, bg: catStyle(c.name).bg }
+                return (
+                  <button type="button" key={c.id} className={`chip ${catID === c.id ? 'on' : ''}`} onClick={() => { setCatID(c.id); setCatTouched(true) }}>
+                    <span className="ic" style={{ background: st.bg }}>{st.icon}</span><span>{c.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {cats.length === 0 && <div className="notice">暂无{type === 'income' ? '收入' : '支出'}分类，请先到「我的 → 管理 → 分类」新增分类后再记账。</div>}
+          </>
         )}
         {suggest && !op && type !== 'transfer' && (
           <div className="meta" style={{ color: 'var(--muted)', fontSize: '0.75rem', margin: '-6px 0 10px' }}>{suggest}</div>

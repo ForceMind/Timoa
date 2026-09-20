@@ -229,6 +229,88 @@ func (s *Service) ArchiveAccount(ledgerID, actorID, accountID string) error {
 	return nil
 }
 
+// UpdateAccount updates the display name and, only before any posting, the opening balance.
+// Once entries exist, the financial record is immutable; callers must create an adjustment instead.
+func (s *Service) UpdateAccount(ledgerID, actorID, accountID, name string, openingCents int64) error {
+	if name == "" {
+		return errf(400, "invalid_input", "account name required")
+	}
+	if openingCents > money.MaxCents || openingCents < -money.MaxCents {
+		return ErrInvalidAmount
+	}
+	s.wm.Lock()
+	defer s.wm.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var subjectID string
+	if err := tx.QueryRow(`SELECT subject_id FROM accounts WHERE id=? AND ledger_id=? AND archived_at IS NULL`, accountID, ledgerID).Scan(&subjectID); err != nil {
+		return ErrNotFound
+	}
+	var entries int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM entries WHERE account_id=?`, accountID).Scan(&entries); err != nil {
+		return err
+	}
+	if entries > 0 {
+		return errf(409, "account_has_transactions", "account has transactions; use a balance adjustment instead")
+	}
+	if _, err := tx.Exec(`UPDATE accounts SET name=?, opening_balance_cents=?, balance_confirmed=1 WHERE id=?`, name, openingCents, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE subjects SET name=? WHERE id=?`, name, subjectID); err != nil {
+		return err
+	}
+	if err := audit(tx, ledgerID, actorID, "account.update", "account", accountID, map[string]any{"name": name, "opening_balance_cents": openingCents}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteAccount permanently removes an unused account. Accounts carrying any
+// ledger entry or child account must remain in the immutable history and can only be archived.
+func (s *Service) DeleteAccount(ledgerID, actorID, accountID string) error {
+	s.wm.Lock()
+	defer s.wm.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var subjectID string
+	if err := tx.QueryRow(`SELECT subject_id FROM accounts WHERE id=? AND ledger_id=?`, accountID, ledgerID).Scan(&subjectID); err != nil {
+		return ErrNotFound
+	}
+	var refs, children int
+	if err := tx.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM entries WHERE account_id=?) +
+		(SELECT COUNT(*) FROM transactions WHERE from_account_id=? OR to_account_id=?) +
+		(SELECT COUNT(*) FROM templates WHERE default_account_id=?) +
+		(SELECT COUNT(*) FROM recurrence_rules WHERE account_id=?) +
+		(SELECT COUNT(*) FROM savings_goals WHERE account_id=?) +
+		(SELECT COUNT(*) FROM amortization_plans WHERE account_id=?)`,
+		accountID, accountID, accountID, accountID, accountID, accountID, accountID).Scan(&refs); err != nil {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM accounts WHERE parent_id=?`, accountID).Scan(&children); err != nil {
+		return err
+	}
+	if refs > 0 || children > 0 {
+		return errf(409, "account_not_deletable", "account has transactions, dependent records or sub-accounts; archive it instead")
+	}
+	if err := audit(tx, ledgerID, actorID, "account.delete", "account", accountID, nil); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM accounts WHERE id=?`, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM subjects WHERE id=?`, subjectID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // SetStoredValueMeta 设置储值卡面额与到期日（仅 stored_value 类型）。
 func (s *Service) SetStoredValueMeta(ledgerID, accountID string, faceValueCents int64, expiresOn string) error {
 	if expiresOn != "" {

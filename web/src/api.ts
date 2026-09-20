@@ -227,6 +227,12 @@ export const api = {
     req<Account>(`/api/v1/accounts/${parentID}/sub`, { method: 'POST', body: JSON.stringify(b) }),
   setStoredValueMeta: (id: string, faceValue: string, expiresOn: string) =>
     req(`/api/v1/accounts/${id}/stored-value-meta`, { method: 'POST', body: JSON.stringify({ face_value: faceValue, expires_on: expiresOn }) }),
+  updateAccount: (id: string, name: string, openingBalance: string) =>
+    req<{ ok: boolean }>(`/api/v1/accounts/${id}/update`, { method: 'POST', body: JSON.stringify({ name, opening_balance: openingBalance }) }),
+  deleteAccount: (id: string) =>
+    req<{ ok: boolean }>(`/api/v1/accounts/${id}/delete`, { method: 'POST', body: JSON.stringify({}) }),
+  archiveAccount: (id: string) =>
+    req<{ ok: boolean }>(`/api/v1/accounts/${id}/archive`, { method: 'POST', body: JSON.stringify({}) }),
   categories: (kind: 'expense' | 'income') => req<{ categories: Category[] }>(`/api/v1/categories?kind=${kind}`),
   transactions: (limit = 30) => req<{ transactions: Tx[] }>(`/api/v1/transactions?limit=${limit}`),
   post: (b: Record<string, unknown>) =>
@@ -535,4 +541,10 @@ export const ACCOUNT_TYPES: Record<string, string> = {
   fund: '基金',
   other_asset: '其他资产',
   loan_liability: '借款负债',
+}
+
+export const ACCOUNT_ICONS: Record<string, string> = {
+  cash: '💵', bank_card: '🏦', wechat_change: '💬', alipay_balance: '🅰️',
+  stored_value: '🎫', credit_card: '💳', huabei: '🌸', stock: '📈',
+  fund: '📊', other_asset: '💼', loan_liability: '📋',
 }
